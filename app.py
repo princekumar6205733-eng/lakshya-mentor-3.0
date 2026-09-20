@@ -24,35 +24,39 @@ SAFE_SETTINGS = {
     HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
 }
 
-# 3. System Prompt with Concept-First Guard & Clean Math
+# 3. System Prompt with NCERT, PYQ, OMR Objectives & Board Pedagogy
 SYSTEM_PROMPT = """
-Tumhara naam Lakshya Mentor 3.0 hai—Class 9 aur Class 10 (Bihar Board & CBSE) ke bacho ke liye ek academic AI guide aur mentor.
+Tumhara naam Lakshya Mentor 3.0 hai—Class 9 aur Class 10 (Bihar Board / BSEB aur CBSE) ke chhatron ke liye ek academic AI mentor.
 
-CORE PEDAGOGY RULES:
-1. CONCEPT-FIRST GUARD (NO DIRECT SHORTCUTS):
-   - Agar student direct 'Notes', 'Important Questions', ya direct formula/solution maangta hai:
-     * Pehle strictly 2-3 lines me core concept ka intuition/reason samjhao.
-     * Saaf bolo: "Pehle logic samajhna zaroori hai, direct ratne se exam me marks nahi aayenge."
-     * Uske baad hi structured key-points ya formulas do.
+CORE PEDAGOGICAL PILLARS:
+1. NCERT & STANDARD REFERENCE BASE:
+   - Saare concepts, definitions aur numericals strictly NCERT, NCERT Exemplar, aur standard state guide/reference books ke mutabiq hone chahiye.
+   - Student jis bhasha (Hindi/Hinglish/English) me baat kare, usi bhasha me samjhao.
 
-2. MANDATORY COUNTER-QUESTION:
+2. CONCEPT-FIRST GUARD (NO SHORTCUTS):
+   - Agar student direct answer, formula, ya ratta maangta hai:
+     * Pehle strictly 2-3 lines me underlying concept/logic samjhao.
+     * Saaf bolo: "Pehle logic samajhna zaroori hai, direct ratne se board exam me marks nahi aayenge."
+     * Uske baad hi structured answer/formula do.
+
+3. BOARD EXAM STEP-MARKING PATTERN (CLASS 10):
+   - Subjective sawalon me strict Bihar Board / CBSE topper step-marking format follow karo:
+     * GIVEN (Kya diya gaya hai)
+     * TO FIND / TO PROVE (Kya nikalna hai ya siddh karna hai)
+     * FORMULA / THEOREM (Kaun sa niyam/sutra lagega)
+     * STEP-BY-STEP CALCULATION (Puri vidhi)
+     * FINAL ANSWER WITH PROPER UNIT (Sahi matrak ke saath antim uttar)
+
+4. MANDATORY COUNTER-QUESTION (PYQ & OMR OBJECTIVES):
    - Har jawab ke aakhiri me ek challenging concept-checking sawal zaroor poocho.
-   - Class 10: NCERT Exemplar ya Board PYQ level question.
-   - Class 9: Foundational concept test question.
-   - Student se bolo ki aage badhne ke liye is sawal ka jawab de.
+   - Agar topic Bihar Board se sambandhit hai: Pichle 5 saal ka official Bihar Board PYQ (Previous Year Question) ya tricky OMR Objective Question (4 options ke saath) poocho.
+   - Agar CBSE hai: NCERT Exemplar ya CBSE Board PYQ case-based sawal poocho.
+   - Student se bolo: "Agla topic shuru karne se pehle is PYQ / Objective ka jawab do!"
 
-3. CLASS 10 STRICT BOARD PATTERN:
-   - Strict aur serious mentor tone.
-   - Board exam step-marking follow karo (GIVEN -> FORMULA -> STEP-BY-STEP CALCULATION -> FINAL ANSWER WITH UNIT).
-
-4. CLEAN MATHS RULES (NO LATEX):
+5. CLEAN READABLE MATHS (NO RAW LATEX / NO BACKTICKS):
    - Kisi bhi halat me raw LaTeX (jaise \\frac, \\sqrt, \\times, $) use mat karo.
-   - Numbers ya formulas ke aage peeche backtick (`) mat lagao.
-   - Clean readable format use karo:
-     * Division: (a / b)
-     * Multiplication: * ya x
-     * Powers: x^2 ya x cube
-     * Roots: sqrt(x)
+   - Numbers ya formulas ke aage-peeche backtick (`) mat lagao.
+   - Formulas plain readable format me likho: jaise (a / b), sqrt(x), x^2, HCF * LCM = a * b.
 """
 
 def clean_math_syntax(text):
@@ -65,7 +69,7 @@ def clean_math_syntax(text):
     text = re.sub(r'\\sqrt\{([^}]+)\}', r'sqrt(\1)', text)
     return text.strip()
 
-# Dynamic Models Cache (5-Minute Window to protect API Quota)
+# Dynamic Model Cache (Quota Protection)
 CACHED_MODELS = []
 LAST_FETCH_TIME = 0
 
@@ -80,8 +84,10 @@ def get_dynamic_flash_models():
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
                 name_lower = m.name.lower()
-                if 'pro' in name_lower or 'vision' in name_lower or 'embedding' in name_lower:
+                # TTS, Audio, Vision, Image aur low-quota models ko strictly ignore karo
+                if any(x in name_lower for x in ['pro', 'tts', 'audio', 'vision', 'embedding', 'image']):
                     continue
+                # Sirf high-quota standard flash models chunna hai
                 if 'flash' in name_lower:
                     available_models.append(m.name)
         if available_models:
@@ -91,7 +97,8 @@ def get_dynamic_flash_models():
     except Exception as e:
         print(f"[WARN] Dynamic model fetch failed: {e}")
 
-    return CACHED_MODELS if CACHED_MODELS else ["models/gemini-1.5-flash", "models/gemini-2.0-flash"]
+    # Fallback to high-quota standard models
+    return ["models/gemini-1.5-flash", "models/gemini-2.0-flash"]
 
 # --- HTML & CHAT INTERFACE ---
 CHAT_HTML = """
@@ -215,7 +222,7 @@ CHAT_HTML = """
             } catch (err) {
                 clearInterval(timerInterval);
                 loaderDiv.remove();
-                appendMessage("Server busy hai. Kripya thodi der baad prayas karein.", "bot");
+                appendMessage("Server busy hai ya response slow hai. Dobara prayas karein.", "bot");
             } finally {
                 userInput.disabled = false;
                 sendBtn.disabled = false;
@@ -255,7 +262,7 @@ def chat():
             "Main tumhara personal board exam mentor hoon. Padhai shuru karne se pehle mujhe ye do baatein batao:\n"
             "1. **Tumhara Naam kya hai?**\n"
             "2. **Tum kaun si Class me ho (Class 9 ya Class 10)?**\n\n"
-            "Batao, taaki hum tumhare target aur syllabus ke mutabiq planning shuru kar sakein!"
+            "Batao, taaki hum NCERT aur Board PYQs ke hisaab se planning shuru kar sakein!"
         )
         return jsonify({"reply": welcome_reply, "status": "ask_class"}), 200
 
@@ -294,6 +301,7 @@ def chat():
                     last_error = str(m_err)
                     err_str = last_error.lower()
                     if "429" in err_str or "quota" in err_str:
+                        # Key 1 quota full, failover to Key 2
                         break
                     continue
 
@@ -302,7 +310,7 @@ def chat():
             continue
 
     if "429" in last_error.lower() or "quota" in last_error.lower():
-        return jsonify({"reply": f"Google Quota Issue: {last_error}"}), 429
+        return jsonify({"reply": "Dono API Keys temporary busy hain. Kripya 1 minute baad dobara sawal bhejein."}), 429
 
     return jsonify({"reply": f"AI Error: {last_error}"}), 500
 
