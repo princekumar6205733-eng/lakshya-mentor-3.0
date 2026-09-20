@@ -97,7 +97,7 @@ def get_dynamic_flash_models():
     except Exception as e:
         print(f"[WARN] Dynamic model fetch failed: {e}")
 
-    # Fallback to high-quota standard models
+    # Safe Fallbacks
     return ["models/gemini-1.5-flash", "models/gemini-2.0-flash"]
 
 # --- HTML & CHAT INTERFACE ---
@@ -222,7 +222,7 @@ CHAT_HTML = """
             } catch (err) {
                 clearInterval(timerInterval);
                 loaderDiv.remove();
-                appendMessage("Server busy hai ya response slow hai. Dobara prayas karein.", "bot");
+                appendMessage("Server par thoda load hai. Dobara bhej kar dekhein.", "bot");
             } finally {
                 userInput.disabled = false;
                 sendBtn.disabled = false;
@@ -254,9 +254,11 @@ def chat():
         return jsonify({"reply": "Apna sawal likhein ya batayein kis topic me doubt hai."}), 400
 
     clean_query = re.sub(r'[^\w\s]', '', user_query).lower().strip()
-    greeting_triggers = ["hi", "hello", "namaste", "pranam", "hey", "hlo", "start", "shuru"]
+    
+    # Matches hi, hii, hiii, hello, hey, heyyy, namaste etc.
+    is_greeting = bool(re.match(r'^(h+i+|h+e+l+o+|h+e+y+|namaste|pranam|start|shuru)\b', clean_query))
 
-    if clean_query in greeting_triggers or any(clean_query.startswith(w + " ") for w in greeting_triggers):
+    if is_greeting:
         welcome_reply = (
             "🌟 **Namaste aur Lakshya Mentor 3.0 me swagat hai!**\n\n"
             "Main tumhara personal board exam mentor hoon. Padhai shuru karne se pehle mujhe ye do baatein batao:\n"
@@ -277,6 +279,7 @@ def chat():
 
     last_error = ""
 
+    # DUAL KEY ROTATION WITH MODEL FAILOVER
     for key_idx, key in enumerate(API_KEYS):
         try:
             genai.configure(api_key=key)
@@ -299,10 +302,7 @@ def chat():
 
                 except Exception as m_err:
                     last_error = str(m_err)
-                    err_str = last_error.lower()
-                    if "429" in err_str or "quota" in err_str:
-                        # Key 1 quota full, failover to Key 2
-                        break
+                    # Break mat karo, agle model ko try karo!
                     continue
 
         except Exception as k_err:
@@ -310,7 +310,7 @@ def chat():
             continue
 
     if "429" in last_error.lower() or "quota" in last_error.lower():
-        return jsonify({"reply": "Dono API Keys temporary busy hain. Kripya 1 minute baad dobara sawal bhejein."}), 429
+        return jsonify({"reply": f"Google Quota Alert: {last_error}"}), 429
 
     return jsonify({"reply": f"AI Error: {last_error}"}), 500
 
