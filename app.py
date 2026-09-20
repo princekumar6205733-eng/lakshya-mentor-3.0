@@ -65,14 +65,13 @@ def clean_math_syntax(text):
     text = re.sub(r'\\sqrt\{([^}]+)\}', r'sqrt(\1)', text)
     return text.strip()
 
-# CACHED DYNAMIC MODELS (Quota bachane ke liye 5 minute tak cache rahega)
+# Dynamic Models Cache (5-Minute Window to protect API Quota)
 CACHED_MODELS = []
 LAST_FETCH_TIME = 0
 
 def get_dynamic_flash_models():
     global CACHED_MODELS, LAST_FETCH_TIME
     now = time.time()
-    # Agar pichle 5 minute ke andar models fetch hue hain toh wahi use karo
     if CACHED_MODELS and (now - LAST_FETCH_TIME < 300):
         return CACHED_MODELS
 
@@ -216,7 +215,7 @@ CHAT_HTML = """
             } catch (err) {
                 clearInterval(timerInterval);
                 loaderDiv.remove();
-                appendMessage("Server par thoda load hai. Kripya dobara bhej kar dekhein.", "bot");
+                appendMessage("Server busy hai. Kripya thodi der baad prayas karein.", "bot");
             } finally {
                 userInput.disabled = false;
                 sendBtn.disabled = false;
@@ -271,7 +270,6 @@ def chat():
 
     last_error = ""
 
-    # DUAL KEY POOL WITH FAILOVER
     for key_idx, key in enumerate(API_KEYS):
         try:
             genai.configure(api_key=key)
@@ -296,7 +294,6 @@ def chat():
                     last_error = str(m_err)
                     err_str = last_error.lower()
                     if "429" in err_str or "quota" in err_str:
-                        # Current key quota full, move to next key immediately
                         break
                     continue
 
@@ -304,11 +301,12 @@ def chat():
             last_error = str(k_err)
             continue
 
-        if "429" in last_error.lower() or "quota" in last_error.lower():
-        return jsonify({"reply": f"Google Quota Details: {last_error}"}), 429
+    if "429" in last_error.lower() or "quota" in last_error.lower():
+        return jsonify({"reply": f"Google Quota Issue: {last_error}"}), 429
 
-    return jsonify({"reply": f"AI Error Details: {last_error}"}), 500
-    
+    return jsonify({"reply": f"AI Error: {last_error}"}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+    
