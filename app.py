@@ -79,42 +79,105 @@ def get_dynamic_flash_models():
         print(f"[WARN] Dynamic model fetch failed: {e}")
     return ["models/gemini-1.5-flash", "models/gemini-2.0-flash"]
 
+# --- HTML & CHAT INTERFACE ---
+CHAT_HTML = """
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lakshya Mentor 3.0</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; height: 100vh; display: flex; flex-direction: column; }
+        header { background: #1e293b; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #334155; }
+        header h1 { font-size: 18px; font-weight: 700; color: #38bdf8; }
+        .tag { font-size: 11px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid #38bdf8; padding: 3px 8px; border-radius: 12px; }
+        #chat-box { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+        .message { max-width: 85%; padding: 12px 16px; border-radius: 14px; font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+        .user { align-self: flex-end; background: #2563eb; color: #fff; border-bottom-right-radius: 2px; }
+        .bot { align-self: flex-start; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-bottom-left-radius: 2px; }
+        #input-area { background: #1e293b; padding: 12px; border-top: 1px solid #334155; display: flex; gap: 10px; }
+        input { flex: 1; padding: 12px 16px; border-radius: 24px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 15px; outline: none; }
+        input:focus { border-color: #38bdf8; }
+        button { background: #2563eb; color: #fff; border: none; padding: 0 20px; border-radius: 24px; font-weight: 600; cursor: pointer; }
+        button:hover { background: #1d4ed8; }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <h1>🚀 Lakshya Mentor 3.0</h1>
+            <span style="font-size: 12px; color: #94a3b8;">Class 9 & 10 Board Mentor</span>
+        </div>
+        <span class="tag">Active</span>
+    </header>
+
+    <div id="chat-box">
+        <div class="message bot">🌟 <b>Namaste! Main Lakshya Mentor 3.0 hoon.</b><br><br>Pehle mujhe batao:<br>1. <b>Tumhara Naam kya hai?</b><br>2. <b>Class 9 me ho ya Class 10 me?</b></div>
+    </div>
+
+    <form id="input-area" onsubmit="sendQuery(event)">
+        <input type="text" id="user-input" placeholder="Apna doubt ya sawal likho..." autocomplete="off" required />
+        <button type="submit" id="send-btn">Send</button>
+    </form>
+
+    <script>
+        let chatHistory = [];
+        const chatBox = document.getElementById("chat-box");
+        const userInput = document.getElementById("user-input");
+        const sendBtn = document.getElementById("send-btn");
+
+        function appendMessage(text, sender) {
+            const div = document.createElement("div");
+            div.className = "message " + sender;
+            div.innerHTML = text.replace(/\\n/g, "<br>");
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        async function sendQuery(e) {
+            e.preventDefault();
+            const msg = userInput.value.trim();
+            if (!msg) return;
+
+            appendMessage(msg, "user");
+            userInput.value = "";
+            userInput.disabled = true;
+            sendBtn.disabled = true;
+
+            try {
+                const res = await fetch("/chat", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: msg, history: chatHistory })
+                });
+
+                const data = await res.json();
+                const reply = data.reply || "Kuch gadbad hui, dobara try karo.";
+                appendMessage(reply, "bot");
+
+                chatHistory.push({ role: "user", parts: [msg] });
+                chatHistory.push({ role: "model", parts: [reply] });
+            } catch (err) {
+                appendMessage("Network error. Kripya thodi der baad try karein.", "bot");
+            } finally {
+                userInput.disabled = false;
+                sendBtn.disabled = false;
+                userInput.focus();
+            }
+        }
+    </script>
+</body>
+</html>
+"""
+
 # --- ROUTES ---
 
 @app.route('/', methods=['GET'])
 def home():
-    html_page = """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Lakshya Mentor 3.0</title>
-        <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0d1117; color: #c9d1d9; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
-            .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 30px; max-width: 450px; width: 100%; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
-            h1 { color: #58a6ff; font-size: 24px; margin-bottom: 10px; }
-            p { color: #8b949e; font-size: 14px; line-height: 1.5; }
-            .status-badge { display: inline-block; padding: 6px 14px; background: rgba(56, 139, 253, 0.15); color: #58a6ff; border: 1px solid #388bfd; border-radius: 20px; font-weight: 600; font-size: 13px; margin: 15px 0; }
-            .info { background: #21262d; border-radius: 8px; padding: 15px; text-align: left; font-size: 13px; color: #8b949e; margin-top: 15px; }
-            .info b { color: #f0f6fc; }
-        </style>
-    </head>
-    <body>
-        <div class="card">
-            <h1>🚀 Lakshya Mentor 3.0</h1>
-            <div class="status-badge">● API Live & Running</div>
-            <p>Class 9th & 10th AI Study Mentor Backend is operational.</p>
-            <div class="info">
-                <div><b>Health Check:</b> <a href="/ping" style="color: #58a6ff;">/ping</a></div>
-                <div style="margin-top: 8px;"><b>Chat Endpoint:</b> <code>POST /chat</code></div>
-                <div style="margin-top: 8px;"><b>System Architecture:</b> Multi-Tenant Ready</div>
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-    return render_template_string(html_page)
+    return render_template_string(CHAT_HTML)
 
 @app.route('/ping', methods=['GET'])
 def keep_alive():
@@ -132,7 +195,6 @@ def chat():
     clean_query = re.sub(r'[^\w\s]', '', user_query).lower()
     greeting_triggers = ["hi", "hello", "namaste", "pranam", "hey", "start"]
 
-    # SMART WELCOME & ONBOARDING INTERCEPTOR
     if len(history) == 0 and any(clean_query.startswith(w) for w in greeting_triggers):
         welcome_reply = (
             "🌟 **Namaste aur Lakshya Mentor 3.0 me swagat hai!**\n\n"
