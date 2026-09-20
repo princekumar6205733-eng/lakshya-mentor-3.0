@@ -94,9 +94,16 @@ CHAT_HTML = """
         header h1 { font-size: 18px; font-weight: 700; color: #38bdf8; }
         .tag { font-size: 11px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid #38bdf8; padding: 3px 8px; border-radius: 12px; }
         #chat-box { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+        .placeholder-hint { margin: auto; text-align: center; color: #64748b; font-size: 14px; }
         .message { max-width: 85%; padding: 12px 16px; border-radius: 14px; font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
         .user { align-self: flex-end; background: #2563eb; color: #fff; border-bottom-right-radius: 2px; }
         .bot { align-self: flex-start; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-bottom-left-radius: 2px; }
+        .typing-indicator { display: flex; align-items: center; gap: 6px; padding: 10px 16px; font-size: 13px; color: #94a3b8; }
+        .dot { width: 7px; height: 7px; background: #38bdf8; border-radius: 50%; animation: blink 1.4s infinite both; }
+        .dot:nth-child(2) { animation-delay: 0.2s; }
+        .dot:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink { 0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1.1); } }
+        .timer-text { margin-left: 8px; font-variant-numeric: tabular-nums; color: #38bdf8; font-weight: 600; }
         #input-area { background: #1e293b; padding: 12px; border-top: 1px solid #334155; display: flex; gap: 10px; }
         input { flex: 1; padding: 12px 16px; border-radius: 24px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 15px; outline: none; }
         input:focus { border-color: #38bdf8; }
@@ -115,7 +122,7 @@ CHAT_HTML = """
     </header>
 
     <div id="chat-box">
-        <div class="message bot">🌟 <b>Namaste! Main Lakshya Mentor 3.0 hoon.</b><br><br>Pehle mujhe batao:<br>1. <b>Tumhara Naam kya hai?</b><br>2. <b>Class 9 me ho ya Class 10 me?</b></div>
+        <div class="placeholder-hint" id="hint-text">Padhai shuru karne ke liye niche <b>'Hi'</b> ya apna sawal likho 👇</div>
     </div>
 
     <form id="input-area" onsubmit="sendQuery(event)">
@@ -125,16 +132,21 @@ CHAT_HTML = """
 
     <script>
         let chatHistory = [];
+        let timerInterval = null;
         const chatBox = document.getElementById("chat-box");
         const userInput = document.getElementById("user-input");
         const sendBtn = document.getElementById("send-btn");
 
         function appendMessage(text, sender) {
+            const hint = document.getElementById("hint-text");
+            if (hint) hint.remove();
+
             const div = document.createElement("div");
             div.className = "message " + sender;
             div.innerHTML = text.replace(/\\n/g, "<br>");
             chatBox.appendChild(div);
             chatBox.scrollTop = chatBox.scrollHeight;
+            return div;
         }
 
         async function sendQuery(e) {
@@ -147,6 +159,20 @@ CHAT_HTML = """
             userInput.disabled = true;
             sendBtn.disabled = true;
 
+            // Typing loader + timer box
+            const loaderDiv = document.createElement("div");
+            loaderDiv.className = "message bot typing-indicator";
+            loaderDiv.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="timer-text">0.0s</span>';
+            chatBox.appendChild(loaderDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            let startTime = performance.now();
+            timerInterval = setInterval(() => {
+                const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
+                const timerSpan = loaderDiv.querySelector(".timer-text");
+                if (timerSpan) timerSpan.innerText = elapsed + "s";
+            }, 100);
+
             try {
                 const res = await fetch("/chat", {
                     method: "POST",
@@ -155,12 +181,17 @@ CHAT_HTML = """
                 });
 
                 const data = await res.json();
-                const reply = data.reply || "Kuch gadbad hui, dobara try karo.";
+                clearInterval(timerInterval);
+                loaderDiv.remove();
+
+                const reply = data.reply || "Kuch takneeki dikkat aayi, dobara prayas karein.";
                 appendMessage(reply, "bot");
 
                 chatHistory.push({ role: "user", parts: [msg] });
                 chatHistory.push({ role: "model", parts: [reply] });
             } catch (err) {
+                clearInterval(timerInterval);
+                loaderDiv.remove();
                 appendMessage("Network error. Kripya thodi der baad try karein.", "bot");
             } finally {
                 userInput.disabled = false;
@@ -192,16 +223,17 @@ def chat():
     if not user_query:
         return jsonify({"reply": "Apna sawal likhein ya batayein kis topic me doubt hai."}), 400
 
-    clean_query = re.sub(r'[^\w\s]', '', user_query).lower()
-    greeting_triggers = ["hi", "hello", "namaste", "pranam", "hey", "start"]
+    clean_query = re.sub(r'[^\w\s]', '', user_query).lower().strip()
+    greeting_triggers = ["hi", "hello", "namaste", "pranam", "hey", "hlo", "start", "shuru"]
 
-    if len(history) == 0 and any(clean_query.startswith(w) for w in greeting_triggers):
+    # Jab bacha pehli baar Hi/Hello kare tab hi welcome message aur Naam-Class poochega
+    if clean_query in greeting_triggers or any(clean_query.startswith(w + " ") for w in greeting_triggers):
         welcome_reply = (
             "🌟 **Namaste aur Lakshya Mentor 3.0 me swagat hai!**\n\n"
             "Main tumhara personal board exam mentor hoon. Padhai shuru karne se pehle mujhe ye do baatein batao:\n"
             "1. **Tumhara Naam kya hai?**\n"
             "2. **Tum kaun si Class me ho (Class 9 ya Class 10)?**\n\n"
-            "Batao, taaki hum tumhare target ke hisaab se planning shuru kar sakein!"
+            "Batao, taaki hum tumhare target aur syllabus ke mutabiq planning shuru kar sakein!"
         )
         return jsonify({"reply": welcome_reply, "status": "ask_class"}), 200
 
@@ -261,3 +293,6 @@ def chat():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    
+                
+    
