@@ -65,21 +65,34 @@ def clean_math_syntax(text):
     text = re.sub(r'\\sqrt\{([^}]+)\}', r'sqrt(\1)', text)
     return text.strip()
 
+# CACHED DYNAMIC MODELS (Quota bachane ke liye 5 minute tak cache rahega)
+CACHED_MODELS = []
+LAST_FETCH_TIME = 0
+
 def get_dynamic_flash_models():
+    global CACHED_MODELS, LAST_FETCH_TIME
+    now = time.time()
+    # Agar pichle 5 minute ke andar models fetch hue hain toh wahi use karo
+    if CACHED_MODELS and (now - LAST_FETCH_TIME < 300):
+        return CACHED_MODELS
+
     try:
         available_models = []
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
                 name_lower = m.name.lower()
-                if 'pro' in name_lower or 'vision' in name_lower:
+                if 'pro' in name_lower or 'vision' in name_lower or 'embedding' in name_lower:
                     continue
                 if 'flash' in name_lower:
                     available_models.append(m.name)
         if available_models:
+            CACHED_MODELS = available_models
+            LAST_FETCH_TIME = now
             return available_models
     except Exception as e:
         print(f"[WARN] Dynamic model fetch failed: {e}")
-    return ["models/gemini-1.5-flash", "models/gemini-2.0-flash"]
+
+    return CACHED_MODELS if CACHED_MODELS else ["models/gemini-1.5-flash", "models/gemini-2.0-flash"]
 
 # --- HTML & CHAT INTERFACE ---
 CHAT_HTML = """
@@ -89,7 +102,6 @@ CHAT_HTML = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lakshya Mentor 3.0</title>
-    <!-- Marked library to render Markdown cleanly without raw stars or backticks -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -186,7 +198,6 @@ CHAT_HTML = """
             }, 100);
 
             try {
-                // Bina kisi abort timeout ke direct call - server jitna bhi time le pura wait karega
                 const res = await fetch("/chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -205,7 +216,7 @@ CHAT_HTML = """
             } catch (err) {
                 clearInterval(timerInterval);
                 loaderDiv.remove();
-                appendMessage("Server busy hai ya network issue hai. Kripya dobara bhejein.", "bot");
+                appendMessage("Server par thoda load hai. Kripya dobara bhej kar dekhein.", "bot");
             } finally {
                 userInput.disabled = false;
                 sendBtn.disabled = false;
@@ -258,9 +269,9 @@ def chat():
         "max_output_tokens": 2048,
     }
 
-    hit_429_quota = False
-    hit_503_busy = False
+    last_error = ""
 
+    # DUAL KEY POOL WITH FAILOVER
     for key_idx, key in enumerate(API_KEYS):
         try:
             genai.configure(api_key=key)
@@ -282,27 +293,21 @@ def chat():
                     return jsonify({"reply": cleaned_reply, "model_used": model_name}), 200
 
                 except Exception as m_err:
-                    err_str = str(m_err).lower()
+                    last_error = str(m_err)
+                    err_str = last_error.lower()
                     if "429" in err_str or "quota" in err_str:
-                        hit_429_quota = True
+                        # Current key quota full, move to next key immediately
                         break
-                    elif "503" in err_str or "overloaded" in err_str:
-                        hit_503_busy = True
-                        continue
-                    else:
-                        continue
+                    continue
 
         except Exception as k_err:
-            print(f"[ERROR] Key #{key_idx+1} failed: {k_err}")
+            last_error = str(k_err)
             continue
 
-    if hit_429_quota:
-        return jsonify({"reply": "System quota limit par hai. Kripya 1 minute baad dobara koshish karein."}), 429
-    elif hit_503_busy:
-        return jsonify({"reply": "AI server par thoda heavy load hai. 30 second me sawal dobara bhejein."}), 503
+    if "429" in last_error.lower() or "quota" in last_error.lower():
+        return jsonify({"reply": "API limit temporary busy hai. Kripya 1 minute baad dobara sawal bhejein."}), 429
 
-    return jsonify({"reply": "AI service se sampark nahi ho pa raha hai. Kripya thodi der baad prayas karein."}), 500
+    return jsonify({"reply": "AI service se connection me dikkat aayi. Kripya dobara koshish karein."}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-    
