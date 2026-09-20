@@ -304,10 +304,11 @@ def chat():
             last_error = str(k_err)
             continue
 
-    if "429" in last_error.lower() or "quota" in last_error.lower():
-        return jsonify({"reply": "API limit temporary busy hai. Kripya 1 minute baad dobara sawal bhejein."}), 429
+        if "429" in last_error.lower() or "quota" in last_error.lower():
+        return jsonify({"reply": f"Google Quota Details: {last_error}"}), 429
 
-    return jsonify({"reply": "AI service se connection me dikkat aayi. Kripya dobara koshish karein."}), 500
+    return jsonify({"reply": f"AI Error Details: {last_error}"}), 500
+    
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
