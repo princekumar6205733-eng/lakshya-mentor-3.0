@@ -24,14 +24,14 @@ SAFE_SETTINGS = {
     HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
 }
 
-# 3. System Prompt with Concept-First Guard & Clean Text Rules
+# 3. System Prompt with Concept-First Guard & Clean Math
 SYSTEM_PROMPT = """
 Tumhara naam Lakshya Mentor 3.0 hai—Class 9 aur Class 10 (Bihar Board & CBSE) ke bacho ke liye ek academic AI guide aur mentor.
 
 CORE PEDAGOGY RULES:
 1. CONCEPT-FIRST GUARD (NO DIRECT SHORTCUTS):
    - Agar student direct 'Notes', 'Important Questions', ya direct formula/solution maangta hai:
-     * Pehle strictly 2-3 lines me core concept ka logic samjhao.
+     * Pehle strictly 2-3 lines me core concept ka intuition/reason samjhao.
      * Saaf bolo: "Pehle logic samajhna zaroori hai, direct ratne se exam me marks nahi aayenge."
      * Uske baad hi structured key-points ya formulas do.
 
@@ -45,15 +45,19 @@ CORE PEDAGOGY RULES:
    - Strict aur serious mentor tone.
    - Board exam step-marking follow karo (GIVEN -> FORMULA -> STEP-BY-STEP CALCULATION -> FINAL ANSWER WITH UNIT).
 
-4. CLEAN PLAIN TEXT FORMATTING:
-   - Numbers ya formulas ke aage-peeche backticks (`) bilkul mat lagao.
-   - Formulas plain text me likho: jaise x = 2 / 3, ya HCF * LCM = a * b.
+4. CLEAN MATHS RULES (NO LATEX):
+   - Kisi bhi halat me raw LaTeX (jaise \\frac, \\sqrt, \\times, $) use mat karo.
+   - Numbers ya formulas ke aage peeche backtick (`) mat lagao.
+   - Clean readable format use karo:
+     * Division: (a / b)
+     * Multiplication: * ya x
+     * Powers: x^2 ya x cube
+     * Roots: sqrt(x)
 """
 
 def clean_math_syntax(text):
     if not text:
         return ""
-    # Remove raw backticks around equations/numbers
     text = text.replace('`', '')
     text = re.sub(r'\\\[\vert{}\\\]|\$|\$', '', text)
     text = text.replace('\\times', '*').replace('\\cdot', '*')
@@ -85,7 +89,7 @@ CHAT_HTML = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lakshya Mentor 3.0</title>
-    <!-- Marked library to render Markdown cleanly without showing raw stars or backticks -->
+    <!-- Marked library to render Markdown cleanly without raw stars or backticks -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -182,17 +186,12 @@ CHAT_HTML = """
             }, 100);
 
             try {
-                // Extended timeout to 60 seconds to prevent early drops
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 60000);
-
+                // Bina kisi abort timeout ke direct call - server jitna bhi time le pura wait karega
                 const res = await fetch("/chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ message: msg, history: chatHistory }),
-                    signal: controller.signal
+                    body: JSON.stringify({ message: msg, history: chatHistory })
                 });
-                clearTimeout(timeoutId);
 
                 const data = await res.json();
                 clearInterval(timerInterval);
@@ -206,7 +205,7 @@ CHAT_HTML = """
             } catch (err) {
                 clearInterval(timerInterval);
                 loaderDiv.remove();
-                appendMessage("Request timeout ho gaya. Kripya dobara bhej kar dekhein.", "bot");
+                appendMessage("Server busy hai ya network issue hai. Kripya dobara bhejein.", "bot");
             } finally {
                 userInput.disabled = false;
                 sendBtn.disabled = false;
@@ -306,3 +305,4 @@ def chat():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    
