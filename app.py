@@ -24,22 +24,29 @@ SAFE_SETTINGS = {
     HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
 }
 
-# 3. System Prompt with Proper Math Markdown, NCERT, PYQ & Board Pattern
+# 3. System Prompt with Clean Language & Board Pedagogy
 SYSTEM_PROMPT = """
 Tumhara naam Lakshya Mentor 3.0 hai—Class 9 aur Class 10 (Bihar Board / BSEB aur CBSE) ke chhatron ke liye ek academic AI mentor.
 
 CORE PEDAGOGICAL PILLARS:
 1. NCERT & STANDARD REFERENCE BASE:
-   - Saare concepts, definitions aur numericals strictly NCERT, NCERT Exemplar, aur standard state guide/reference books ke mutabiq hone chahiye.
-   - Student jis bhasha (Hindi/Hinglish/English) me baat kare, usi bhasha me samjhao.
+   - Saare concepts, definitions aur numericals strictly NCERT, NCERT Exemplar, aur standard state guide ke mutabiq hone chahiye.
+   - Bhasha saral, saaf Hindi/Hinglish honi chahiye jisse bache ko ek baar me samajh aaye.
 
-2. CONCEPT-FIRST GUARD (NO SHORTCUTS):
+2. STRICT READABILITY RULE (NO RAW LATEX / NO CODE TAGS):
+   - KISI BHI HALAT ME raw LaTeX tags jaise \\text{...}, \\frac, \\sqrt, \\alpha, \\beta, \\times use MAT KARO.
+   - Greek letters ko directly readable likho: jaise alpha (α), beta (β), theta (θ).
+   - Division ko simple '(a / b)' likho. Formulas ko simple likho jaise:
+     Shunyako ka Yog (α + β) = -(x ka gunank) / (x^2 ka gunank) = -b/a
+     Shunyako ka Gunanfal (α * β) = (Achar pad) / (x^2 ka gunank) = c/a
+
+3. CONCEPT-FIRST GUARD (NO SHORTCUTS):
    - Agar student direct answer, formula, ya ratta maangta hai:
-     * Pehle strictly 2-3 lines me underlying concept/logic samjhao.
+     * Pehle strictly 2-3 lines me core concept/logic samjhao.
      * Saaf bolo: "Pehle logic samajhna zaroori hai, direct ratne se board exam me marks nahi aayenge."
      * Uske baad hi structured answer/formula do.
 
-3. BOARD EXAM STEP-MARKING PATTERN (CLASS 10):
+4. BOARD EXAM STEP-MARKING PATTERN (CLASS 10):
    - Subjective sawalon me strict Bihar Board / CBSE topper step-marking format follow karo:
      * **GIVEN (दिया गया है)**
      * **TO FIND / TO PROVE (ज्ञात करना है / सिद्ध करना है)**
@@ -47,29 +54,53 @@ CORE PEDAGOGICAL PILLARS:
      * **STEP-BY-STEP CALCULATION (चरणबद्ध हल)**
      * **FINAL ANSWER WITH UNIT (उत्तर)**
 
-4. MANDATORY COUNTER-QUESTION (PYQ & OMR OBJECTIVES):
+5. MANDATORY COUNTER-QUESTION (PYQ & OMR OBJECTIVES):
    - Har jawab ke aakhiri me ek challenging concept-checking sawal zaroor poocho.
    - Bihar Board: Pichle saalon ka official BSEB PYQ ya OMR Objective Question (4 options A, B, C, D ke saath).
    - CBSE: NCERT Exemplar ya PYQ case-based sawal.
-   - Student se bolo: "Agla topic shuru karne se pehle is sawal ka jawab comment/reply me do!"
-
-5. CLEAN MATH FORMAT:
-   - Maths ke expressions ko simple standard format me likho: jaise `a = b * q + r` jahan `0 <= r < b`.
-   - Complex roots ko `√5` ya `sqrt(5)` aur powers ko `x²` ya `x^2` likho taaki mobile par saaf padha ja sake.
-   - Faltu raw backticks ka prayog har number ke aage-peeche mat karo.
+   - Student se bolo: "Agla topic shuru karne se pehle is sawal ka jawab reply me do!"
 """
 
 def clean_math_syntax(text):
     if not text:
         return ""
-    # Strip unnecessary raw delimiters
+    
+    # Unnecessary code blocks and wrappers
     text = text.replace('`', '')
-    text = re.sub(r'\\\[\vert{}\\\]|\$|\$', '', text)
+    text = re.sub(r'\\\[|\\\]|\$|\$', '', text)
+    
+    # Convert \text{...} to plain text (Fixes the {text } issue completely)
+    text = re.sub(r'\\text\s*\{([^}]+)\}', r'\1', text)
+    text = re.sub(r'\\mathrm\s*\{([^}]+)\}', r'\1', text)
+    text = re.sub(r'\\mathbf\s*\{([^}]+)\}', r'\1', text)
+    
+    # Greek letters to clear unicode symbols
+    greek_map = {
+        '\\alpha': 'α',
+        '\\beta': 'β',
+        '\\gamma': 'γ',
+        '\\theta': 'θ',
+        '\\lambda': 'λ',
+        '\\pi': 'π',
+        '\\Delta': 'Δ',
+        '\\omega': 'ω'
+    }
+    for latex, symbol in greek_map.items():
+        text = text.replace(latex, symbol)
+        
+    # Math Operators & Symbols
     text = text.replace('\\times', '×').replace('\\cdot', '·')
     text = text.replace('\\le', '≤').replace('\\ge', '≥')
-    text = text.replace('\\neq', '≠')
+    text = text.replace('\\neq', '≠').replace('\\approx', '≈')
+    text = text.replace('\\pm', '±').replace('\\degree', '°')
+    
+    # Fractions and Roots
     text = re.sub(r'\\sqrt\{([^}]+)\}', r'√\1', text)
     text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'(\1 / \2)', text)
+    
+    # Clean any leftover dangling backslashes before plain words
+    text = re.sub(r'\\([a-zA-Z]+)', r'\1', text)
+    
     return text.strip()
 
 # Dynamic Model Cache
@@ -92,7 +123,6 @@ def get_dynamic_flash_models():
                 if 'flash' in name_lower:
                     available_models.append(m.name)
         if available_models:
-            # Sort to put high-speed flash models first
             available_models.sort(key=lambda x: ('1.5' in x or '2.0' in x), reverse=True)
             CACHED_MODELS = available_models
             LAST_FETCH_TIME = now
@@ -260,7 +290,6 @@ def chat():
 
     clean_query = re.sub(r'[^\w\s]', '', user_query).lower().strip()
     
-    # Accurate greeting regex
     is_greeting = bool(re.match(r'^(h+i+|h+e+l+o+|h+e+y+|namaste|pranam|start|shuru)\b', clean_query))
 
     if is_greeting:
@@ -284,7 +313,6 @@ def chat():
 
     last_error = ""
 
-    # DUAL KEY ROTATION WITH SORTED MODELS
     for key_idx, key in enumerate(API_KEYS):
         try:
             genai.configure(api_key=key)
