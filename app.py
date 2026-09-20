@@ -24,14 +24,14 @@ SAFE_SETTINGS = {
     HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
 }
 
-# 3. System Prompt with Concept-First Guard & Step-by-Step Pedagogy
+# 3. System Prompt with Concept-First Guard & Clean Text Rules
 SYSTEM_PROMPT = """
 Tumhara naam Lakshya Mentor 3.0 hai—Class 9 aur Class 10 (Bihar Board & CBSE) ke bacho ke liye ek academic AI guide aur mentor.
 
 CORE PEDAGOGY RULES:
 1. CONCEPT-FIRST GUARD (NO DIRECT SHORTCUTS):
    - Agar student direct 'Notes', 'Important Questions', ya direct formula/solution maangta hai:
-     * Pehle strictly 2-3 lines me core concept ka intuition/reason samjhao.
+     * Pehle strictly 2-3 lines me core concept ka logic samjhao.
      * Saaf bolo: "Pehle logic samajhna zaroori hai, direct ratne se exam me marks nahi aayenge."
      * Uske baad hi structured key-points ya formulas do.
 
@@ -45,19 +45,17 @@ CORE PEDAGOGY RULES:
    - Strict aur serious mentor tone.
    - Board exam step-marking follow karo (GIVEN -> FORMULA -> STEP-BY-STEP CALCULATION -> FINAL ANSWER WITH UNIT).
 
-4. CLEAN MATHS RULES (NO LATEX):
-   - Kisi bhi halat me raw LaTeX (jaise \\frac, \\sqrt, \\times, $) use mat karo.
-   - Clean readable format use karo:
-     * Division: (a / b)
-     * Multiplication: * ya x
-     * Powers: x^2 ya x cube
-     * Roots: sqrt(x)
+4. CLEAN PLAIN TEXT FORMATTING:
+   - Numbers ya formulas ke aage-peeche backticks (`) bilkul mat lagao.
+   - Formulas plain text me likho: jaise x = 2 / 3, ya HCF * LCM = a * b.
 """
 
 def clean_math_syntax(text):
     if not text:
         return ""
-    text = re.sub(r'\\\[|\\\]|\$|\$', '', text)
+    # Remove raw backticks around equations/numbers
+    text = text.replace('`', '')
+    text = re.sub(r'\\\[\vert{}\\\]|\$|\$', '', text)
     text = text.replace('\\times', '*').replace('\\cdot', '*')
     text = re.sub(r'\\frac\{([^}]+)\}\{([^}]+)\}', r'(\1 / \2)', text)
     text = re.sub(r'\\sqrt\{([^}]+)\}', r'sqrt(\1)', text)
@@ -87,6 +85,8 @@ CHAT_HTML = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lakshya Mentor 3.0</title>
+    <!-- Marked library to render Markdown cleanly without showing raw stars or backticks -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; height: 100vh; display: flex; flex-direction: column; }
@@ -95,7 +95,10 @@ CHAT_HTML = """
         .tag { font-size: 11px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid #38bdf8; padding: 3px 8px; border-radius: 12px; }
         #chat-box { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
         .placeholder-hint { margin: auto; text-align: center; color: #64748b; font-size: 14px; }
-        .message { max-width: 85%; padding: 12px 16px; border-radius: 14px; font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+        .message { max-width: 88%; padding: 12px 16px; border-radius: 14px; font-size: 14.5px; line-height: 1.6; word-break: break-word; }
+        .message p { margin-bottom: 8px; }
+        .message p:last-child { margin-bottom: 0; }
+        .message ul, .message ol { margin-left: 20px; margin-bottom: 8px; }
         .user { align-self: flex-end; background: #2563eb; color: #fff; border-bottom-right-radius: 2px; }
         .bot { align-self: flex-start; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-bottom-left-radius: 2px; }
         .typing-indicator { display: flex; align-items: center; gap: 6px; padding: 10px 16px; font-size: 13px; color: #94a3b8; }
@@ -143,7 +146,13 @@ CHAT_HTML = """
 
             const div = document.createElement("div");
             div.className = "message " + sender;
-            div.innerHTML = text.replace(/\\n/g, "<br>");
+            
+            if (sender === "bot") {
+                div.innerHTML = marked.parse(text);
+            } else {
+                div.innerText = text;
+            }
+
             chatBox.appendChild(div);
             chatBox.scrollTop = chatBox.scrollHeight;
             return div;
@@ -159,7 +168,6 @@ CHAT_HTML = """
             userInput.disabled = true;
             sendBtn.disabled = true;
 
-            // Typing loader + timer box
             const loaderDiv = document.createElement("div");
             loaderDiv.className = "message bot typing-indicator";
             loaderDiv.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="timer-text">0.0s</span>';
@@ -174,11 +182,17 @@ CHAT_HTML = """
             }, 100);
 
             try {
+                // Extended timeout to 60 seconds to prevent early drops
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 60000);
+
                 const res = await fetch("/chat", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ message: msg, history: chatHistory })
+                    body: JSON.stringify({ message: msg, history: chatHistory }),
+                    signal: controller.signal
                 });
+                clearTimeout(timeoutId);
 
                 const data = await res.json();
                 clearInterval(timerInterval);
@@ -192,7 +206,7 @@ CHAT_HTML = """
             } catch (err) {
                 clearInterval(timerInterval);
                 loaderDiv.remove();
-                appendMessage("Network error. Kripya thodi der baad try karein.", "bot");
+                appendMessage("Request timeout ho gaya. Kripya dobara bhej kar dekhein.", "bot");
             } finally {
                 userInput.disabled = false;
                 sendBtn.disabled = false;
@@ -226,7 +240,6 @@ def chat():
     clean_query = re.sub(r'[^\w\s]', '', user_query).lower().strip()
     greeting_triggers = ["hi", "hello", "namaste", "pranam", "hey", "hlo", "start", "shuru"]
 
-    # Jab bacha pehli baar Hi/Hello kare tab hi welcome message aur Naam-Class poochega
     if clean_query in greeting_triggers or any(clean_query.startswith(w + " ") for w in greeting_triggers):
         welcome_reply = (
             "🌟 **Namaste aur Lakshya Mentor 3.0 me swagat hai!**\n\n"
@@ -293,6 +306,3 @@ def chat():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-    
-                
-    
