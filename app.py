@@ -32,7 +32,7 @@ CORE PEDAGOGICAL PILLARS:
    - Saare concepts, definitions aur numericals strictly NCERT, NCERT Exemplar, aur standard state guide ke mutabiq hon.
    - Bhasha saral, saaf Hindi/Hinglish honi chahiye jisse bachhe ko ek baar me samajh aaye.
 
-2. STRICT READABILITY RULE (NO RAW LATEX / NO CODE TAGS):
+2. STRICT READABILITY RULE (NO RAW LATEX / NO CODE TAGS / NO UNWANTED ASTERISKS):
    - KISI BHI HALAT ME raw LaTeX tags jaise \\text{...}, \\frac, \\sqrt, \\alpha, \\beta, \\times use MAT KARO.
    - Greek letters ko directly readable likho: jaise alpha (α), beta (β), theta (θ).
    - Division ko simple (a / b) likho. Formulas ko simple likho jaise:
@@ -73,7 +73,7 @@ def clean_math_syntax(text):
     text = re.sub(r'\\mathbf\{([^}]*)\}', r'\1', text)
     text = re.sub(r'\\mathit\{([^}]*)\}', r'\1', text)
 
-    # Greek letters to clear unicode symbols (alpha, beta, gamma, theta, etc.)
+    # Greek letters to clear unicode symbols
     greek_map = {
         r'\alpha': 'α',
         r'\beta': 'β',
@@ -109,7 +109,7 @@ def clean_math_syntax(text):
 
     return text.strip()
 
-# Dynamic Single Model Cache (Google se available model lekar ek hi fix rakhna)
+# Dynamic Single Model Cache (Google se lightweight available model khojna)
 CACHED_AVAILABLE_MODEL = None
 
 def get_single_available_model():
@@ -128,15 +128,15 @@ def get_single_available_model():
                     available_models.append(m.name)
 
         if available_models:
-            # Sabse naye version ko prioritize karna
-            available_models.sort(key=lambda x: ('2.5' in x or '2.0' in x or '1.5' in x), reverse=True)
+            # Sabse stable aur lightweight Flash model ko pick karna
+            available_models.sort(reverse=True)
             CACHED_AVAILABLE_MODEL = available_models[0]
             return CACHED_AVAILABLE_MODEL
     except Exception as e:
-        print(f"[WARN] Dynamic model fetch failed: {e}")
+        print(f"[WARN] Dynamic model list fetch failed: {e}")
 
-    # Fallback
-    CACHED_AVAILABLE_MODEL = "gemini-1.5-flash"
+    # Fallback to Google suggested model
+    CACHED_AVAILABLE_MODEL = "models/gemini-3.6-flash"
     return CACHED_AVAILABLE_MODEL
 
 # --- HTML & CHAT INTERFACE ---
@@ -326,7 +326,7 @@ def chat():
     }
 
     try:
-        # Ek single valid available model uthana
+        # Dynamic Lightweight Available Model
         model_name = get_single_available_model()
 
         model = genai.GenerativeModel(
@@ -337,12 +337,14 @@ def chat():
         )
 
         chat_session = model.start_chat(history=history)
-        response = chat_session.send_message(user_query, request_options={"timeout": 12})
+        response = chat_session.send_message(user_query, request_options={"timeout": 15})
 
         cleaned_reply = clean_math_syntax(response.text)
         return jsonify({"reply": cleaned_reply, "model_used": model_name}), 200
 
     except Exception as e:
+        global CACHED_AVAILABLE_MODEL
+        CACHED_AVAILABLE_MODEL = None  # Cache reset taaki next request fresh model uthaye
         err_msg = str(e)
         if "429" in err_msg.lower() or "quota" in err_msg.lower():
             return jsonify({"reply": f"Google Quota Alert: Kripya 1 minute baad prayas karein ({err_msg})"}), 429
@@ -351,5 +353,3 @@ def chat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-    
-    
