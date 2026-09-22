@@ -107,11 +107,30 @@ def clean_math_syntax(text):
 
     return text.strip()
 
-# Fast Static Models
-FAST_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-1.5-flash"
-]
+# Available Models Live Fetch & In-Memory Cache (Zero delay, Zero 404)
+ACTIVE_MODELS_CACHE = []
+
+def get_live_models():
+    global ACTIVE_MODELS_CACHE
+    if ACTIVE_MODELS_CACHE:
+        return ACTIVE_MODELS_CACHE
+    try:
+        models = [
+            m.name for m in genai.list_models()
+            if 'generateContent' in m.supported_generation_methods
+            and 'flash' in m.name.lower()
+        ]
+        if models:
+            # Sort kar ke sabse naye models ko pehle rakhein
+            models.sort(key=lambda x: ('2.5' in x or '2.0' in x or '1.5' in x), reverse=True)
+            ACTIVE_MODELS_CACHE = models
+            return ACTIVE_MODELS_CACHE
+    except Exception as e:
+        print(f"Model discovery error: {e}")
+
+    # Fallback agar network check fail ho
+    return ["gemini-2.5-flash", "gemini-1.5-flash"]
+
 # --- HTML & CHAT INTERFACE ---
 CHAT_HTML = """
 <!DOCTYPE html>
@@ -304,8 +323,9 @@ def chat():
     for key_idx, key in enumerate(API_KEYS):
         try:
             genai.configure(api_key=key)
+            available_models = get_live_models()
 
-            for model_name in FAST_MODELS:
+            for model_name in available_models:
                 try:
                     model = genai.GenerativeModel(
                         model_name=model_name,
