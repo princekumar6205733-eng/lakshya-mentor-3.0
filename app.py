@@ -9,7 +9,7 @@ from google.generativeai.types import HarmCategory, HarmBlockThreshold
 app = Flask(__name__)
 CORS(app)
 
-# 1. Single Primary API Key Configuration
+# 1. Single Primary API Key
 API_KEY = os.environ.get("GEMINI_API_KEY_1", "").strip() or os.environ.get("GEMINI_API_KEY_2", "").strip()
 
 if API_KEY:
@@ -23,7 +23,7 @@ SAFE_SETTINGS = {
     HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
 }
 
-# 3. System Prompt - Fast, Concise & Board Oriented (Zero Timeout)
+# 3. System Prompt - Concise & Board Oriented
 SYSTEM_PROMPT = """
 Tumhara naam Lakshya Mentor 3.0 hai—Class 9 aur Class 10 (Bihar Board / BSEB aur CBSE) ke chhatron ke liye ek academic mentor.
 
@@ -80,6 +80,38 @@ def clean_math_syntax(text):
     text = text.replace('***', '').replace('**', '')
 
     return text.strip()
+
+# Dynamic Pure Flash Discovery (Omni, TTS, Pro, Audio, Vision sab block)
+CACHED_DYNAMIC_MODEL = None
+
+def get_live_flash_model():
+    global CACHED_DYNAMIC_MODEL
+    if CACHED_DYNAMIC_MODEL:
+        return CACHED_DYNAMIC_MODEL
+
+    try:
+        candidate_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                name_lower = m.name.lower()
+                # Zero-quota, audio, aur non-text models ko sakhti se bypass karna
+                if any(bad in name_lower for bad in ['omni', 'tts', 'pro', 'audio', 'vision', 'embedding', 'image']):
+                    continue
+                # Sirf genuine Flash model allow honge
+                if 'flash' in name_lower:
+                    candidate_models.append(m.name)
+
+        if candidate_models:
+            # Sabse stable version ko list ke top par rakh kar cache karna
+            candidate_models.sort(reverse=True)
+            CACHED_DYNAMIC_MODEL = candidate_models[0]
+            return CACHED_DYNAMIC_MODEL
+    except Exception as e:
+        print(f"[WARN] Dynamic model lookup failed: {e}")
+
+    # Agar list na mile toh first available default fallback
+    CACHED_DYNAMIC_MODEL = "models/gemini-2.5-flash"
+    return CACHED_DYNAMIC_MODEL
 
 # --- HTML & CHAT INTERFACE ---
 CHAT_HTML = """
@@ -218,7 +250,7 @@ CHAT_HTML = """
             } catch (err) {
                 clearInterval(timerInterval);
                 loaderDiv.remove();
-                appendMessage("Server busy hai. Kripya 5 second ruk kar dobara message bhejein.", "bot");
+                appendMessage("Server par load hai. Kripya 5 second ruk kar dobara message bhejein.", "bot");
             } finally {
                 userInput.disabled = false;
                 sendBtn.disabled = false;
@@ -265,38 +297,42 @@ def chat():
     if not API_KEY:
         return jsonify({"reply": "Server error: API Key configure nahi hai."}), 500
 
-    # Short output limit taaki response 2-4 seconds me aa jaye
+    # Rapid generation configuration
     generation_config = {
         "temperature": 0.2,
         "top_p": 0.8,
-        "max_output_tokens": 800,
+        "max_output_tokens": 1000,
     }
 
     try:
+        model_name = get_live_flash_model()
+
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name=model_name,
             system_instruction=SYSTEM_PROMPT,
             generation_config=generation_config,
             safety_settings=SAFE_SETTINGS
         )
 
         chat_session = model.start_chat(history=history)
-        
-        # 20s strict timeout taaki Render ka 30s cut-off na lage
         response = chat_session.send_message(user_query, request_options={"timeout": 20})
 
         cleaned_reply = clean_math_syntax(response.text)
-        return jsonify({"reply": cleaned_reply}), 200
+        return jsonify({"reply": cleaned_reply, "model_used": model_name}), 200
 
     except Exception as e:
+        # Cache reset taaki agle attempt me blacklist filter se dusra active model uth sake
+        global CACHED_DYNAMIC_MODEL
+        CACHED_DYNAMIC_MODEL = None
+
         err_msg = str(e)
         if "504" in err_msg or "deadline" in err_msg.lower() or "499" in err_msg:
-            return jsonify({"reply": "Topic thoda lamba tha. Kripya chhota point ya direct sawal poochhein taaki turant jawab mile!"}), 200
+            return jsonify({"reply": "Sawalaat ka jawab taiyaar karne me samay laga. Kripya chhota sawal likhein ya dobara bhejein!"}), 200
         if "429" in err_msg.lower() or "quota" in err_msg.lower():
-            return jsonify({"reply": "Google Quota limit: Kripya 30 second baad dobara bhejein."}), 429
+            return jsonify({"reply": "Google Quota Alert: Kripya 30 second baad dobara bhejein."}), 429
         return jsonify({"reply": f"AI Error: {err_msg}"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-    
+            
