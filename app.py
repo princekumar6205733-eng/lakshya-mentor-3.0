@@ -23,57 +23,36 @@ SAFE_SETTINGS = {
     HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
 }
 
-# 3. System Prompt with Clean Language & Board Pedagogy
+# 3. System Prompt - Fast, Concise & Board Oriented (Zero Timeout)
 SYSTEM_PROMPT = """
 Tumhara naam Lakshya Mentor 3.0 hai—Class 9 aur Class 10 (Bihar Board / BSEB aur CBSE) ke chhatron ke liye ek academic mentor.
 
-CORE PEDAGOGICAL PILLARS:
-1. NCERT & STANDARD REFERENCE BASE:
-   - Saare concepts, definitions aur numericals strictly NCERT, NCERT Exemplar, aur standard state guide ke mutabiq hon.
-   - Bhasha saral, saaf Hindi/Hinglish honi chahiye jisse bachhe ko ek baar me samajh aaye.
-
-2. STRICT READABILITY RULE (NO RAW LATEX / NO CODE TAGS / NO UNWANTED ASTERISKS):
-   - KISI BHI HALAT ME raw LaTeX tags jaise \\text{...}, \\frac, \\sqrt, \\alpha, \\beta, \\times use MAT KARO.
-   - Greek letters ko directly readable likho: jaise alpha (α), beta (β), theta (θ).
-   - Division ko simple (a / b) likho. Formulas ko simple likho jaise:
-     Shunyako ka Yog (α + β) = -(x ka gunank) / (x^2 ka gunank) = -b/a
-     Shunyako ka Gunanfal (α * β) = (Achar pad) / (x^2 ka gunank) = c/a
-
-3. CONCEPT-FIRST GUARD (NO SHORTCUTS):
-   - Agar student direct answer, formula, ya ratta maangta hai:
-     * Pehle strictly 2-3 lines me core concept/logic samjhao.
-     * Saaf bolo: "Pehle logic samajhna zaroori hai, direct ratne se board exam me marks nahi aayenge."
-     * Uske baad hi structured answer/formula do.
-
-4. BOARD EXAM STEP-MARKING PATTERN (CLASS 10):
-   - Subjective sawalon me strict Bihar Board / CBSE topper step-marking format follow karo:
-     GIVEN (Diya gaya hai): ...
-     TO FIND / TO PROVE (Gyaat karna hai / Siddh karna hai): ...
-     FORMULA / THEOREM (Sutra / Pramey): ...
-     STEP-BY-STEP CALCULATION (Charanbaddh hal): ...
-     FINAL ANSWER WITH UNIT (Uttar): ...
-
-5. MANDATORY COUNTER-QUESTION (PYQ & OMR OBJECTIVES):
-   - Har jawab ke aakhiri me ek challenging concept-checking sawal zaroor poochho.
-   - Bihar Board: Pichle saalon ka official BSEB PYQ ya OMR Objective Question (4 options A, B, C, D ke saath).
-   - CBSE: NCERT Exemplar ya PYQ case-based sawal.
-   - Student se bolo: "Agla topic shuru karne se pehle is sawal ka jawab reply me do!"
+SPEED & RESPONSE RULES:
+1. Jawab seedha, point-to-point aur saral Hinglish/Hindi me do. Faltu lambe essay mat likho taaki reply turant generate ho sake.
+2. STRICT READABILITY:
+   - Koi bhi raw LaTeX tags (\\text, \\frac, \\sqrt, etc.) ya code blocks use mat karo.
+   - Greek letters ko readable likho jaise alpha (α), beta (β), theta (θ).
+   - Division ko simple (a / b) likho.
+3. STEP-MARKING PATTERN (Short & Crisp):
+   - Numerical ya definition me seedha:
+     * Point 1: Mukhya Concept / Formula
+     * Point 2: Charanbaddh Hal (Calculation)
+     * Point 3: Final Answer
+4. MANDATORY COUNTER-QUESTION:
+   - Jawab ke ant me sirf 1 chhota Board/PYQ objective sawal poochho 4 options (A, B, C, D) ke saath.
 """
 
 def clean_math_syntax(text):
     if not text:
         return ""
 
-    # Unnecessary code blocks and wrappers
     text = text.replace('```', '')
     text = re.sub(r'\\\[(.*?)\\\]', r'\1', text)
 
-    # Convert \text{...} to plain text
     text = re.sub(r'\\text\{([^}]*)\}', r'\1', text)
     text = re.sub(r'\\mathbf\{([^}]*)\}', r'\1', text)
     text = re.sub(r'\\mathit\{([^}]*)\}', r'\1', text)
 
-    # Greek letters to clear unicode symbols
     greek_map = {
         r'\alpha': 'α',
         r'\beta': 'β',
@@ -87,31 +66,20 @@ def clean_math_syntax(text):
     for latex, symbol in greek_map.items():
         text = text.replace(latex, symbol)
 
-    # Math Operators & Symbols
     text = text.replace(r'\times', '×').replace(r'\cdot', '·')
     text = text.replace(r'\le', '≤').replace(r'\ge', '≥')
     text = text.replace(r'\neq', '≠').replace(r'\approx', '≈')
     text = text.replace(r'\pm', '±').replace(r'\degree', '°')
 
-    # Fractions and Roots
     text = re.sub(r'\\sqrt\{([^}]*)\}', r'√(\1)', text)
     text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'(\1 / \2)', text)
 
-    # Clean any leftover dangling backslashes before plain words
     text = re.sub(r'\\([a-zA-Z]+)', r'\1', text)
-
-    # Remove extra LaTeX wrappers
     text = text.replace('$$', '').replace('$', '')
     text = text.replace(r'\(', '').replace(r'\)', '')
-
-    # Extra stars (*) ko saaf karna
     text = text.replace('***', '').replace('**', '')
 
     return text.strip()
-
-# Google ka verified direct active model (Zero search delay)
-def get_single_available_model():
-    return "gemini-3.6-flash"
 
 # --- HTML & CHAT INTERFACE ---
 CHAT_HTML = """
@@ -243,10 +211,14 @@ CHAT_HTML = """
 
                 chatHistory.push({ role: "user", parts: [msg] });
                 chatHistory.push({ role: "model", parts: [reply] });
+
+                if (chatHistory.length > 8) {
+                    chatHistory = chatHistory.slice(-8);
+                }
             } catch (err) {
                 clearInterval(timerInterval);
                 loaderDiv.remove();
-                appendMessage("Server par load hai. Kripya thoda ruk kar dobara bhej kar dekhein.", "bot");
+                appendMessage("Server busy hai. Kripya 5 second ruk kar dobara message bhejein.", "bot");
             } finally {
                 userInput.disabled = false;
                 sendBtn.disabled = false;
@@ -293,17 +265,16 @@ def chat():
     if not API_KEY:
         return jsonify({"reply": "Server error: API Key configure nahi hai."}), 500
 
+    # Short output limit taaki response 2-4 seconds me aa jaye
     generation_config = {
-        "temperature": 0.3,
-        "top_p": 0.85,
-        "max_output_tokens": 2048,
+        "temperature": 0.2,
+        "top_p": 0.8,
+        "max_output_tokens": 800,
     }
 
     try:
-        model_name = get_single_available_model()
-
         model = genai.GenerativeModel(
-            model_name=model_name,
+            model_name="gemini-2.5-flash",
             system_instruction=SYSTEM_PROMPT,
             generation_config=generation_config,
             safety_settings=SAFE_SETTINGS
@@ -311,16 +282,18 @@ def chat():
 
         chat_session = model.start_chat(history=history)
         
-        # Safe 60s timeout taaki 504 Deadline Exceeded na aaye
-        response = chat_session.send_message(user_query, request_options={"timeout": 60})
+        # 20s strict timeout taaki Render ka 30s cut-off na lage
+        response = chat_session.send_message(user_query, request_options={"timeout": 20})
 
         cleaned_reply = clean_math_syntax(response.text)
-        return jsonify({"reply": cleaned_reply, "model_used": model_name}), 200
+        return jsonify({"reply": cleaned_reply}), 200
 
     except Exception as e:
         err_msg = str(e)
+        if "504" in err_msg or "deadline" in err_msg.lower() or "499" in err_msg:
+            return jsonify({"reply": "Topic thoda lamba tha. Kripya chhota point ya direct sawal poochhein taaki turant jawab mile!"}), 200
         if "429" in err_msg.lower() or "quota" in err_msg.lower():
-            return jsonify({"reply": f"Google Quota Alert: Kripya 1 minute baad prayas karein ({err_msg})"}), 429
+            return jsonify({"reply": "Google Quota limit: Kripya 30 second baad dobara bhejein."}), 429
         return jsonify({"reply": f"AI Error: {err_msg}"}), 500
 
 if __name__ == "__main__":
