@@ -9,12 +9,11 @@ from google.generativeai.types import HarmCategory, HarmBlockThreshold
 app = Flask(__name__)
 CORS(app)
 
-# 1. Dual API Key Pool (Render Environment Variables)
-API_KEYS = [
-    os.environ.get("GEMINI_API_KEY_1", "").strip(),
-    os.environ.get("GEMINI_API_KEY_2", "").strip()
-]
-API_KEYS = [k for k in API_KEYS if k]
+# 1. Single Primary API Key Configuration
+API_KEY = os.environ.get("GEMINI_API_KEY_1", "").strip() or os.environ.get("GEMINI_API_KEY_2", "").strip()
+
+if API_KEY:
+    genai.configure(api_key=API_KEY)
 
 # 2. Aggressive Safety Bypass
 SAFE_SETTINGS = {
@@ -48,11 +47,11 @@ CORE PEDAGOGICAL PILLARS:
 
 4. BOARD EXAM STEP-MARKING PATTERN (CLASS 10):
    - Subjective sawalon me strict Bihar Board / CBSE topper step-marking format follow karo:
-     * **GIVEN (Diya gaya hai):** ...
-     * **TO FIND / TO PROVE (Gyaat karna hai / Siddh karna hai):** ...
-     * **FORMULA / THEOREM (Sutra / Pramey):** ...
-     * **STEP-BY-STEP CALCULATION (Charanbaddh hal):** ...
-     * **FINAL ANSWER WITH UNIT (Uttar):** ...
+     GIVEN (Diya gaya hai): ...
+     TO FIND / TO PROVE (Gyaat karna hai / Siddh karna hai): ...
+     FORMULA / THEOREM (Sutra / Pramey): ...
+     STEP-BY-STEP CALCULATION (Charanbaddh hal): ...
+     FINAL ANSWER WITH UNIT (Uttar): ...
 
 5. MANDATORY COUNTER-QUESTION (PYQ & OMR OBJECTIVES):
    - Har jawab ke aakhiri me ek challenging concept-checking sawal zaroor poochho.
@@ -69,12 +68,12 @@ def clean_math_syntax(text):
     text = text.replace('```', '')
     text = re.sub(r'\\\[(.*?)\\\]', r'\1', text)
 
-    # Convert \text{...} to plain text
+    # Convert \text{...} to plain text (Fixes the \text{} issue completely)
     text = re.sub(r'\\text\{([^}]*)\}', r'\1', text)
     text = re.sub(r'\\mathbf\{([^}]*)\}', r'\1', text)
     text = re.sub(r'\\mathit\{([^}]*)\}', r'\1', text)
 
-    # Greek letters to clear unicode symbols
+    # Greek letters to clear unicode symbols (alpha, beta, gamma, theta, etc.)
     greek_map = {
         r'\alpha': 'α',
         r'\beta': 'β',
@@ -101,35 +100,44 @@ def clean_math_syntax(text):
     # Clean any leftover dangling backslashes before plain words
     text = re.sub(r'\\([a-zA-Z]+)', r'\1', text)
 
-    # Remove any extra LaTeX wrappers
+    # Remove extra LaTeX wrappers
     text = text.replace('$$', '').replace('$', '')
     text = text.replace(r'\(', '').replace(r'\)', '')
 
+    # Extra stars (*) ko hata kar simple saaf text banana
+    text = text.replace('***', '').replace('**', '')
+
     return text.strip()
 
-# Available Models Live Fetch & In-Memory Cache (Zero delay, Zero 404)
-ACTIVE_MODELS_CACHE = []
+# Dynamic Single Model Cache (Google se available model lekar ek hi fix rakhna)
+CACHED_AVAILABLE_MODEL = None
 
-def get_live_models():
-    global ACTIVE_MODELS_CACHE
-    if ACTIVE_MODELS_CACHE:
-        return ACTIVE_MODELS_CACHE
+def get_single_available_model():
+    global CACHED_AVAILABLE_MODEL
+    if CACHED_AVAILABLE_MODEL:
+        return CACHED_AVAILABLE_MODEL
+
     try:
-        models = [
-            m.name for m in genai.list_models()
-            if 'generateContent' in m.supported_generation_methods
-            and 'flash' in m.name.lower()
-        ]
-        if models:
-            # Sort kar ke sabse naye models ko pehle rakhein
-            models.sort(key=lambda x: ('2.5' in x or '2.0' in x or '1.5' in x), reverse=True)
-            ACTIVE_MODELS_CACHE = models
-            return ACTIVE_MODELS_CACHE
-    except Exception as e:
-        print(f"Model discovery error: {e}")
+        available_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                name_lower = m.name.lower()
+                if any(x in name_lower for x in ['pro', 'tts', 'audio', 'vision', 'embedding', 'image']):
+                    continue
+                if 'flash' in name_lower:
+                    available_models.append(m.name)
 
-    # Fallback agar network check fail ho
-    return ["gemini-2.5-flash", "gemini-1.5-flash"]
+        if available_models:
+            # Sabse naye version ko prioritize karna
+            available_models.sort(key=lambda x: ('2.5' in x or '2.0' in x or '1.5' in x), reverse=True)
+            CACHED_AVAILABLE_MODEL = available_models[0]
+            return CACHED_AVAILABLE_MODEL
+    except Exception as e:
+        print(f"[WARN] Dynamic model fetch failed: {e}")
+
+    # Fallback
+    CACHED_AVAILABLE_MODEL = "gemini-1.5-flash"
+    return CACHED_AVAILABLE_MODEL
 
 # --- HTML & CHAT INTERFACE ---
 CHAT_HTML = """
@@ -154,7 +162,6 @@ CHAT_HTML = """
         .message p:last-child { margin-bottom: 0; }
         .message ul, .message ol { margin-left: 20px; margin-bottom: 10px; }
         .message li { margin-bottom: 4px; }
-        .message strong { color: #38bdf8; }
         .message hr { border: 0; border-top: 1px solid #334155; margin: 12px 0; }
         .user { align-self: flex-end; background: #2563eb; color: #fff; border-bottom-right-radius: 2px; }
         .bot { align-self: flex-start; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-bottom-left-radius: 2px; }
@@ -175,14 +182,14 @@ CHAT_HTML = """
 <body>
     <header>
         <div>
-            <h1>🌟 Lakshya Mentor 3.0</h1>
+            <h1>Lakshya Mentor 3.0</h1>
             <span>Class 9 & 10 Board Mentor</span>
         </div>
         <span class="tag">Active</span>
     </header>
 
     <div id="chat-box">
-        <div class="placeholder-hint" id="hint-text">Padhai shuru karne ke liye niche <b>'Hi'</b> ya apna sawal likho ✨</div>
+        <div class="placeholder-hint" id="hint-text">Padhai shuru karne ke liye niche <b>'Hi'</b> ya apna sawal likho</div>
     </div>
 
     <form id="input-area" onsubmit="sendQuery(event)">
@@ -301,16 +308,16 @@ def chat():
 
     if is_greeting:
         welcome_reply = (
-            "🌟 **Namaste aur Lakshya Mentor 3.0 me swagat hai!**\n\n"
+            "Namaste aur Lakshya Mentor 3.0 me swagat hai!\n\n"
             "Main tumhara personal board exam mentor hoon. Padhai shuru karne se pehle mujhe ye do baatein batao:\n"
-            "1. **Tumhara Naam kya hai?**\n"
-            "2. **Tum kaun si Class me ho (Class 9 ya Class 10)?**\n\n"
+            "1. Tumhara Naam kya hai?\n"
+            "2. Tum kaun si Class me ho (Class 9 ya Class 10)?\n\n"
             "Batao, taaki hum NCERT aur Board PYQs ke hisaab se planning shuru kar sakein!"
         )
         return jsonify({"reply": welcome_reply, "status": "ask_class"}), 200
 
-    if not API_KEYS:
-        return jsonify({"reply": "Server error: API Keys configure nahi hain."}), 500
+    if not API_KEY:
+        return jsonify({"reply": "Server error: API Key configure nahi hai."}), 500
 
     generation_config = {
         "temperature": 0.3,
@@ -318,47 +325,31 @@ def chat():
         "max_output_tokens": 2048,
     }
 
-    last_error = ""
+    try:
+        # Ek single valid available model uthana
+        model_name = get_single_available_model()
 
-    for key_idx, key in enumerate(API_KEYS):
-        try:
-            genai.configure(api_key=key)
-            available_models = get_live_models()
+        model = genai.GenerativeModel(
+            model_name=model_name,
+            system_instruction=SYSTEM_PROMPT,
+            generation_config=generation_config,
+            safety_settings=SAFE_SETTINGS
+        )
 
-            for model_name in available_models:
-                try:
-                    model = genai.GenerativeModel(
-                        model_name=model_name,
-                        system_instruction=SYSTEM_PROMPT,
-                        generation_config=generation_config,
-                        safety_settings=SAFE_SETTINGS
-                    )
+        chat_session = model.start_chat(history=history)
+        response = chat_session.send_message(user_query, request_options={"timeout": 12})
 
-                    chat_session = model.start_chat(history=history)
-                    
-                    # 10s strict timeout
-                    response = chat_session.send_message(
-                        user_query,
-                        request_options={"timeout": 10}
-                    )
+        cleaned_reply = clean_math_syntax(response.text)
+        return jsonify({"reply": cleaned_reply, "model_used": model_name}), 200
 
-                    cleaned_reply = clean_math_syntax(response.text)
-                    return jsonify({"reply": cleaned_reply, "model_used": model_name}), 200
-
-                except Exception as m_err:
-                    last_error = str(m_err)
-                    continue
-
-        except Exception as k_err:
-            last_error = str(k_err)
-            continue
-
-    if "429" in last_error.lower() or "quota" in last_error.lower():
-        return jsonify({"reply": f"Google Quota Alert: {last_error}"}), 429
-
-    return jsonify({"reply": f"AI Error: {last_error}"}), 500
+    except Exception as e:
+        err_msg = str(e)
+        if "429" in err_msg.lower() or "quota" in err_msg.lower():
+            return jsonify({"reply": f"Google Quota Alert: Kripya 1 minute baad prayas karein ({err_msg})"}), 429
+        return jsonify({"reply": f"AI Error: {err_msg}"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+    
     
