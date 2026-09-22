@@ -68,7 +68,7 @@ def clean_math_syntax(text):
     text = text.replace('```', '')
     text = re.sub(r'\\\[(.*?)\\\]', r'\1', text)
 
-    # Convert \text{...} to plain text (Fixes the \text{} issue completely)
+    # Convert \text{...} to plain text
     text = re.sub(r'\\text\{([^}]*)\}', r'\1', text)
     text = re.sub(r'\\mathbf\{([^}]*)\}', r'\1', text)
     text = re.sub(r'\\mathit\{([^}]*)\}', r'\1', text)
@@ -104,12 +104,12 @@ def clean_math_syntax(text):
     text = text.replace('$$', '').replace('$', '')
     text = text.replace(r'\(', '').replace(r'\)', '')
 
-    # Extra stars (*) ko hata kar simple saaf text banana
+    # Extra stars (*) ko saaf karna
     text = text.replace('***', '').replace('**', '')
 
     return text.strip()
 
-# Dynamic Single Model Cache (Google se lightweight available model khojna)
+# Dynamic Core Flash Discovery (Omni aur 0-quota models bypass)
 CACHED_AVAILABLE_MODEL = None
 
 def get_single_available_model():
@@ -122,21 +122,22 @@ def get_single_available_model():
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
                 name_lower = m.name.lower()
-                if any(x in name_lower for x in ['pro', 'tts', 'audio', 'vision', 'embedding', 'image']):
+                # Omni, Audio, TTS, Image aur Experimental zero-quota models ko filter karna
+                if any(x in name_lower for x in ['omni', 'pro', 'tts', 'audio', 'vision', 'embedding', 'image']):
                     continue
                 if 'flash' in name_lower:
                     available_models.append(m.name)
 
         if available_models:
-            # Sabse stable aur lightweight Flash model ko pick karna
+            # Active stable model pick karega
             available_models.sort(reverse=True)
             CACHED_AVAILABLE_MODEL = available_models[0]
             return CACHED_AVAILABLE_MODEL
     except Exception as e:
-        print(f"[WARN] Dynamic model list fetch failed: {e}")
+        print(f"[WARN] Dynamic model lookup failed: {e}")
 
-    # Fallback to Google suggested model
-    CACHED_AVAILABLE_MODEL = "models/gemini-3.6-flash"
+    # Fallback to direct latest flash model
+    CACHED_AVAILABLE_MODEL = "models/gemini-2.5-flash"
     return CACHED_AVAILABLE_MODEL
 
 # --- HTML & CHAT INTERFACE ---
@@ -326,7 +327,6 @@ def chat():
     }
 
     try:
-        # Dynamic Lightweight Available Model
         model_name = get_single_available_model()
 
         model = genai.GenerativeModel(
@@ -344,7 +344,7 @@ def chat():
 
     except Exception as e:
         global CACHED_AVAILABLE_MODEL
-        CACHED_AVAILABLE_MODEL = None  # Cache reset taaki next request fresh model uthaye
+        CACHED_AVAILABLE_MODEL = None  # Cache reset
         err_msg = str(e)
         if "429" in err_msg.lower() or "quota" in err_msg.lower():
             return jsonify({"reply": f"Google Quota Alert: Kripya 1 minute baad prayas karein ({err_msg})"}), 429
@@ -353,3 +353,4 @@ def chat():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+    
