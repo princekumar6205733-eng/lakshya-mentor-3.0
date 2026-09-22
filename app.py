@@ -1,4 +1,4 @@
-  import os
+import os
 import re
 import google.generativeai as genai
 import gradio as gr
