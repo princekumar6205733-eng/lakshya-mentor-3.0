@@ -109,10 +109,10 @@ def clean_math_syntax(text):
 
 # Fast Static Models
 FAST_MODELS = [
-    "models/gemini-1.5-flash",
-    "models/gemini-1.5-flash-8b"
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-latest",
+    "gemini-2.0-flash"
 ]
-
 # --- HTML & CHAT INTERFACE ---
 CHAT_HTML = """
 <!DOCTYPE html>
