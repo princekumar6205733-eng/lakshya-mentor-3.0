@@ -109,36 +109,9 @@ def clean_math_syntax(text):
 
     return text.strip()
 
-# Dynamic Core Flash Discovery (Omni aur 0-quota models bypass)
-CACHED_AVAILABLE_MODEL = None
-
+# Google ka verified direct active model (Zero search delay)
 def get_single_available_model():
-    global CACHED_AVAILABLE_MODEL
-    if CACHED_AVAILABLE_MODEL:
-        return CACHED_AVAILABLE_MODEL
-
-    try:
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                name_lower = m.name.lower()
-                # Omni, Audio, TTS, Image aur Experimental zero-quota models ko filter karna
-                if any(x in name_lower for x in ['omni', 'pro', 'tts', 'audio', 'vision', 'embedding', 'image']):
-                    continue
-                if 'flash' in name_lower:
-                    available_models.append(m.name)
-
-        if available_models:
-            # Active stable model pick karega
-            available_models.sort(reverse=True)
-            CACHED_AVAILABLE_MODEL = available_models[0]
-            return CACHED_AVAILABLE_MODEL
-    except Exception as e:
-        print(f"[WARN] Dynamic model lookup failed: {e}")
-
-    # Fallback to direct latest flash model
-    CACHED_AVAILABLE_MODEL = "models/gemini-2.5-flash"
-    return CACHED_AVAILABLE_MODEL
+    return "gemini-3.6-flash"
 
 # --- HTML & CHAT INTERFACE ---
 CHAT_HTML = """
@@ -337,14 +310,14 @@ def chat():
         )
 
         chat_session = model.start_chat(history=history)
-        response = chat_session.send_message(user_query, request_options={"timeout": 15})
+        
+        # Safe 60s timeout taaki 504 Deadline Exceeded na aaye
+        response = chat_session.send_message(user_query, request_options={"timeout": 60})
 
         cleaned_reply = clean_math_syntax(response.text)
         return jsonify({"reply": cleaned_reply, "model_used": model_name}), 200
 
     except Exception as e:
-        global CACHED_AVAILABLE_MODEL
-        CACHED_AVAILABLE_MODEL = None  # Cache reset
         err_msg = str(e)
         if "429" in err_msg.lower() or "quota" in err_msg.lower():
             return jsonify({"reply": f"Google Quota Alert: Kripya 1 minute baad prayas karein ({err_msg})"}), 429
