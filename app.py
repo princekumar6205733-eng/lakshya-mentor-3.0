@@ -3,12 +3,10 @@ import re
 import google.generativeai as genai
 import gradio as gr
 
-# 1. API Key Setup (Render ke Environment Variables se private uthayega)
 API_KEY = os.environ.get("GEMINI_API_KEY_1", "").strip() or os.environ.get("GEMINI_API_KEY_2", "").strip()
 if API_KEY:
     genai.configure(api_key=API_KEY)
 
-# 2. Board Oriented System Prompt
 SYSTEM_PROMPT = """
 Tumhara naam Lakshya Mentor 3.0 hai—Class 9 aur Class 10 (Bihar Board / BSEB aur CBSE) ke chhatron ke liye ek academic mentor.
 
@@ -68,7 +66,6 @@ def clean_math_syntax(text):
     text = text.replace('***', '').replace('**', '')
     return text.strip()
 
-# Dynamic Flash Discovery (Omni, TTS, Audio Sab Block)
 CACHED_MODEL = None
 
 def get_flash_model():
@@ -93,8 +90,7 @@ def get_flash_model():
     CACHED_MODEL = "models/gemini-2.5-flash"
     return CACHED_MODEL
 
-# Gradio Streaming Response Generator
-def respond(message, chat_history):
+def predict(message, history):
     if not API_KEY:
         yield "Render Environment Variable me API Key set nahi hai."
         return
@@ -112,13 +108,16 @@ def respond(message, chat_history):
         return
 
     formatted_history = []
-    for turn in chat_history:
-        if isinstance(turn, (list, tuple)) and len(turn) == 2:
-            u_msg, b_msg = turn
+    for item in history:
+        if isinstance(item, dict):
+            role = "user" if item.get("role") == "user" else "model"
+            formatted_history.append({"role": role, "parts": [item.get("content", "")]})
+        elif isinstance(item, (list, tuple)) and len(item) == 2:
+            u_msg, b_msg = item
             if u_msg:
-                formatted_history.append({"role": "user", "parts": [u_msg]})
+                formatted_history.append({"role": "user", "parts": [str(u_msg)]})
             if b_msg:
-                formatted_history.append({"role": "model", "parts": [b_msg]})
+                formatted_history.append({"role": "model", "parts": [str(b_msg)]})
 
     try:
         active_model = get_flash_model()
@@ -138,32 +137,14 @@ def respond(message, chat_history):
     except Exception as e:
         yield f"Error: {str(e)}"
 
-# Custom UI Styling
-custom_css = """
-#main-container { max-width: 850px; margin: auto; padding: 10px; }
-footer { visibility: hidden; }
-"""
-
-with gr.Blocks(title="Lakshya Mentor 3.0", css=custom_css, theme=gr.themes.Soft()) as demo:
-    gr.Markdown("## 🎯 Lakshya Mentor 3.0 (Class 9 & 10 Board Mentor - Beta)")
-    chatbot = gr.Chatbot(height=520, label="Board Doubts & Discussion")
-    msg = gr.Textbox(placeholder="Apna doubt ya sawal yahan likho...", label="Aapka Sawal")
-    clear = gr.ClearButton([msg, chatbot], value="Chat Saaf Karein")
-
-    def user(user_message, history):
-        return "", history + [[user_message, None]]
-
-    def bot(history):
-        user_message = history[-1][0]
-        history[-1][1] = ""
-        for chunk in respond(user_message, history[:-1]):
-            history[-1][1] = chunk
-            yield history
-
-    msg.submit(user, [msg, chatbot], [msg, chatbot], queue=False).then(bot, chatbot, chatbot)
+demo = gr.ChatInterface(
+    fn=predict,
+    title="🎯 Lakshya Mentor 3.0 (Class 9 & 10 Board Mentor - Beta)",
+    description="NCERT aur Board pattern par aadharit live academic mentor.",
+    textbox=gr.Textbox(placeholder="Apna doubt ya sawal yahan likho...", container=False, scale=7),
+    theme="soft"
+)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     demo.queue().launch(server_name="0.0.0.0", server_port=port)
-   
-                        
