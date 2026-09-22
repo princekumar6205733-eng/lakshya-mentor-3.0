@@ -97,27 +97,27 @@ def predict(message, history):
 
     clean_query = re.sub(r'[^\w\s]', '', message).lower().strip()
     if bool(re.match(r'^(h+i+|h+e+l+l*o+|h+e+y+|namaste|pranam|start|shuru)\b', clean_query)):
-        welcome_reply = (
+        yield (
             "Namaste aur Lakshya Mentor 3.0 me swagat hai!\n\n"
             "Main tumhara personal board exam mentor hoon. Padhai shuru karne se pehle mujhe ye do baatein batao:\n"
             "1. Tumhara Naam kya hai?\n"
             "2. Tum kaun si Class me ho (Class 9 ya Class 10)?\n\n"
             "Batao, taaki hum NCERT aur Board PYQs ke hisaab se planning shuru kar sakein!"
         )
-        yield welcome_reply
         return
 
     formatted_history = []
-    for item in history:
-        if isinstance(item, dict):
-            role = "user" if item.get("role") == "user" else "model"
-            formatted_history.append({"role": role, "parts": [item.get("content", "")]})
-        elif isinstance(item, (list, tuple)) and len(item) == 2:
-            u_msg, b_msg = item
-            if u_msg:
-                formatted_history.append({"role": "user", "parts": [str(u_msg)]})
-            if b_msg:
-                formatted_history.append({"role": "model", "parts": [str(b_msg)]})
+    if history:
+        for item in history:
+            if isinstance(item, dict):
+                r = "user" if item.get("role") == "user" else "model"
+                formatted_history.append({"role": r, "parts": [str(item.get("content", ""))]})
+            elif isinstance(item, (list, tuple)) and len(item) == 2:
+                u, b = item
+                if u:
+                    formatted_history.append({"role": "user", "parts": [str(u)]})
+                if b:
+                    formatted_history.append({"role": "model", "parts": [str(b)]})
 
     try:
         active_model = get_flash_model()
@@ -141,10 +141,11 @@ demo = gr.ChatInterface(
     fn=predict,
     title="🎯 Lakshya Mentor 3.0 (Class 9 & 10 Board Mentor - Beta)",
     description="NCERT aur Board pattern par aadharit live academic mentor.",
-    textbox=gr.Textbox(placeholder="Apna doubt ya sawal yahan likho...", container=False, scale=7),
-    theme="soft"
+    textbox=gr.Textbox(placeholder="Apna doubt ya sawal yahan likho...", container=False, scale=7)
 )
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    demo.queue().launch(server_name="0.0.0.0", server_port=port)
+    port_str = os.environ.get("PORT", "10000")
+    port = int(port_str)
+    demo.launch(server_name="0.0.0.0", server_port=port)
+    
