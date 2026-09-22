@@ -1,35 +1,23 @@
 import os
 import time
 import re
+import requests
 from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 app = Flask(__name__)
 CORS(app)
 
-# 1. Single Primary API Key Configuration
+# Single Primary API Key
 API_KEY = os.environ.get("GEMINI_API_KEY_1", "").strip() or os.environ.get("GEMINI_API_KEY_2", "").strip()
 
-if API_KEY:
-    genai.configure(api_key=API_KEY)
-
-# 2. Aggressive Safety Bypass
-SAFE_SETTINGS = {
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-}
-
-# 3. System Prompt with Clean Language & Board Pedagogy
+# Board Focused Concise System Prompt
 SYSTEM_PROMPT = """
 Tumhara naam Lakshya Mentor 3.0 hai—Class 9 aur Class 10 (Bihar Board / BSEB aur CBSE) ke chhatron ke liye ek academic mentor.
 
 CORE PEDAGOGICAL PILLARS:
 1. NCERT & STANDARD REFERENCE BASE:
-   - Saare concepts, definitions aur numericals strictly NCERT, NCERT Exemplar, aur standard state guide ke mutabiq hon.
+   - Saare concepts, definitions aur numericals strictly NCERT aur state board ke mutabiq hon.
    - Bhasha saral, saaf Hindi/Hinglish honi chahiye jisse bachhe ko ek baar me samajh aaye.
 
 2. STRICT READABILITY RULE (NO RAW LATEX / NO CODE TAGS / NO UNWANTED ASTERISKS):
@@ -40,10 +28,7 @@ CORE PEDAGOGICAL PILLARS:
      Shunyako ka Gunanfal (α * β) = (Achar pad) / (x^2 ka gunank) = c/a
 
 3. CONCEPT-FIRST GUARD (NO SHORTCUTS):
-   - Agar student direct answer, formula, ya ratta maangta hai:
-     * Pehle strictly 2-3 lines me core concept/logic samjhao.
-     * Saaf bolo: "Pehle logic samajhna zaroori hai, direct ratne se board exam me marks nahi aayenge."
-     * Uske baad hi structured answer/formula do.
+   - Pehle 2-3 lines me core concept/logic samjhao, fir step-by-step calculation do.
 
 4. BOARD EXAM STEP-MARKING PATTERN (CLASS 10):
    - Subjective sawalon me strict Bihar Board / CBSE topper step-marking format follow karo:
@@ -53,27 +38,24 @@ CORE PEDAGOGICAL PILLARS:
      STEP-BY-STEP CALCULATION (Charanbaddh hal): ...
      FINAL ANSWER WITH UNIT (Uttar): ...
 
-5. MANDATORY COUNTER-QUESTION (PYQ & OMR OBJECTIVES):
-   - Har jawab ke aakhiri me ek challenging concept-checking sawal zaroor poochho.
-   - Bihar Board: Pichle saalon ka official BSEB PYQ ya OMR Objective Question (4 options A, B, C, D ke saath).
-   - CBSE: NCERT Exemplar ya PYQ case-based sawal.
-   - Student se bolo: "Agla topic shuru karne se pehle is sawal ka jawab reply me do!"
+5. MANDATORY COUNTER-QUESTION:
+   - Har jawab ke aakhiri me ek objective PYQ sawal 4 options (A, B, C, D) ke saath zaroor poochho.
 """
 
 def clean_math_syntax(text):
     if not text:
         return ""
 
-    # Unnecessary code blocks and wrappers
+    # Code blocks aur wrappers hatana
     text = text.replace('```', '')
     text = re.sub(r'\\\[(.*?)\\\]', r'\1', text)
 
-    # Convert \text{...} to plain text (Fixes the \text{} issue completely)
+    # \text{...} hatana
     text = re.sub(r'\\text\{([^}]*)\}', r'\1', text)
     text = re.sub(r'\\mathbf\{([^}]*)\}', r'\1', text)
     text = re.sub(r'\\mathit\{([^}]*)\}', r'\1', text)
 
-    # Greek letters to clear unicode symbols
+    # Greek letters mapping
     greek_map = {
         r'\alpha': 'α',
         r'\beta': 'β',
@@ -87,55 +69,60 @@ def clean_math_syntax(text):
     for latex, symbol in greek_map.items():
         text = text.replace(latex, symbol)
 
-    # Math Operators & Symbols
+    # Math symbols
     text = text.replace(r'\times', '×').replace(r'\cdot', '·')
     text = text.replace(r'\le', '≤').replace(r'\ge', '≥')
     text = text.replace(r'\neq', '≠').replace(r'\approx', '≈')
     text = text.replace(r'\pm', '±').replace(r'\degree', '°')
 
-    # Fractions and Roots
+    # Fractions aur Roots
     text = re.sub(r'\\sqrt\{([^}]*)\}', r'√(\1)', text)
     text = re.sub(r'\\frac\{([^}]*)\}\{([^}]*)\}', r'(\1 / \2)', text)
 
-    # Clean any leftover dangling backslashes before plain words
+    # Leftover backslashes hatana
     text = re.sub(r'\\([a-zA-Z]+)', r'\1', text)
 
-    # Remove extra LaTeX wrappers
-    text = text.replace('$$', '').replace('$', '')
-    text = text.replace(r'\(', '').replace(r'\)', '')
-
-    # Extra stars (*) ko saaf karna
+    # Extra LaTeX markers aur stars saaf karna
+    text = text.replace('$$', '').replace('$', '').replace(r'\(', '').replace(r'\)', '')
     text = text.replace('***', '').replace('**', '')
 
     return text.strip()
 
-# Dynamic Single Model Cache (Omni/Audio/Pro Bypass)
+# Dynamic Available Model Discovery via REST API
 CACHED_AVAILABLE_MODEL = None
 
-def get_single_available_model():
+def get_dynamic_model():
     global CACHED_AVAILABLE_MODEL
     if CACHED_AVAILABLE_MODEL:
         return CACHED_AVAILABLE_MODEL
 
     try:
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                name_lower = m.name.lower()
-                if any(x in name_lower for x in ['omni', 'pro', 'tts', 'audio', 'vision', 'embedding', 'image']):
+        url = f"[https://generativelanguage.googleapis.com/v1beta/models?key=](https://generativelanguage.googleapis.com/v1beta/models?key=){API_KEY}"
+        res = requests.get(url, timeout=5).json()
+
+        flash_models = []
+        for m in res.get("models", []):
+            methods = m.get("supportedGenerationMethods", [])
+            name = m.get("name", "")  # Format: "models/gemini-..."
+            name_lower = name.lower()
+
+            if "generateContent" in methods:
+                # Omni, pro, tts, vision, audio ko bypass karna
+                if any(bad in name_lower for bad in ['omni', 'pro', 'tts', 'audio', 'vision', 'embedding', 'image']):
                     continue
                 if 'flash' in name_lower:
-                    available_models.append(m.name)
+                    clean_name = name.replace("models/", "")
+                    flash_models.append(clean_name)
 
-        if available_models:
-            available_models.sort(reverse=True)
-            CACHED_AVAILABLE_MODEL = available_models[0]
+        if flash_models:
+            flash_models.sort(reverse=True)
+            CACHED_AVAILABLE_MODEL = flash_models[0]
             return CACHED_AVAILABLE_MODEL
     except Exception as e:
-        print(f"[WARN] Dynamic model lookup failed: {e}")
+        print(f"Dynamic discovery error: {e}")
 
-    # Safe fallback
-    CACHED_AVAILABLE_MODEL = "models/gemini-2.5-flash"
+    # Fallback to standard live flash
+    CACHED_AVAILABLE_MODEL = "gemini-2.5-flash"
     return CACHED_AVAILABLE_MODEL
 
 # --- HTML & CHAT INTERFACE ---
@@ -146,7 +133,6 @@ CHAT_HTML = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lakshya Mentor 3.0</title>
-    <script src="[https://cdn.jsdelivr.net/npm/marked/marked.min.js](https://cdn.jsdelivr.net/npm/marked/marked.min.js)"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; height: 100vh; display: flex; flex-direction: column; }
@@ -156,12 +142,7 @@ CHAT_HTML = """
         .tag { font-size: 11px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid #38bdf8; padding: 2px 8px; border-radius: 12px; font-weight: 600; }
         #chat-box { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
         .placeholder-hint { margin: auto; text-align: center; color: #64748b; font-size: 14px; }
-        .message { max-width: 90%; padding: 12px 16px; border-radius: 14px; font-size: 15px; line-height: 1.65; word-break: break-word; }
-        .message p { margin-bottom: 10px; }
-        .message p:last-child { margin-bottom: 0; }
-        .message ul, .message ol { margin-left: 20px; margin-bottom: 10px; }
-        .message li { margin-bottom: 4px; }
-        .message hr { border: 0; border-top: 1px solid #334155; margin: 12px 0; }
+        .message { max-width: 90%; padding: 12px 16px; border-radius: 14px; font-size: 15px; line-height: 1.65; word-break: break-word; white-space: pre-wrap; }
         .user { align-self: flex-end; background: #2563eb; color: #fff; border-bottom-right-radius: 2px; }
         .bot { align-self: flex-start; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-bottom-left-radius: 2px; }
         .typing-indicator { display: flex; align-items: center; gap: 6px; padding: 10px 16px; font-size: 13px; color: #94a3b8; }
@@ -209,20 +190,7 @@ CHAT_HTML = """
 
             const div = document.createElement('div');
             div.className = `message ${sender}`;
-
-            if (sender === "bot") {
-                try {
-                    if (typeof marked !== 'undefined' && marked.parse) {
-                        div.innerHTML = marked.parse(text);
-                    } else {
-                        div.innerText = text;
-                    }
-                } catch(e) {
-                    div.innerText = text;
-                }
-            } else {
-                div.innerText = text;
-            }
+            div.innerText = text;
 
             chatBox.appendChild(div);
             chatBox.scrollTop = chatBox.scrollHeight;
@@ -266,16 +234,16 @@ CHAT_HTML = """
                 const reply = data.reply || "Kuch takneeki dikkat aayi, dobara prayas karein.";
                 appendMessage(reply, "bot");
 
-                chatHistory.push({ role: "user", parts: [msg] });
-                chatHistory.push({ role: "model", parts: [reply] });
+                chatHistory.push({ role: "user", parts: [{ text: msg }] });
+                chatHistory.push({ role: "model", parts: [{ text: reply }] });
 
-                if (chatHistory.length > 8) {
-                    chatHistory = chatHistory.slice(-8);
+                if (chatHistory.length > 6) {
+                    chatHistory = chatHistory.slice(-6);
                 }
             } catch (err) {
                 clearInterval(timerInterval);
                 loaderDiv.remove();
-                appendMessage("Server par load hai. Kripya thoda ruk kar dobara bhej kar dekhein.", "bot");
+                appendMessage("Server par load hai. Kripya 5 second ruk kar dobara bhej kar dekhein.", "bot");
             } finally {
                 userInput.disabled = false;
                 sendBtn.disabled = false;
@@ -299,6 +267,7 @@ def keep_alive():
 
 @app.route("/chat", methods=['POST'])
 def chat():
+    global CACHED_AVAILABLE_MODEL
     data = request.get_json(silent=True) or {}
     user_query = data.get("message", "").strip()
     history = data.get("history", [])
@@ -317,43 +286,50 @@ def chat():
             "2. Tum kaun si Class me ho (Class 9 ya Class 10)?\n\n"
             "Batao, taaki hum NCERT aur Board PYQs ke hisaab se planning shuru kar sakein!"
         )
-        return jsonify({"reply": welcome_reply, "status": "ask_class"}), 200
+        return jsonify({"reply": welcome_reply}), 200
 
     if not API_KEY:
         return jsonify({"reply": "Server error: API Key configure nahi hai."}), 500
 
-    generation_config = {
-        "temperature": 0.2,
-        "top_p": 0.85,
-        "max_output_tokens": 1000,
+    selected_model = get_dynamic_model()
+    url = f"[https://generativelanguage.googleapis.com/v1beta/models/](https://generativelanguage.googleapis.com/v1beta/models/){selected_model}:generateContent?key={API_KEY}"
+
+    contents = []
+    for h in history:
+        contents.append(h)
+    contents.append({"role": "user", "parts": [{"text": user_query}]})
+
+    payload = {
+        "system_instruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": contents,
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 800
+        }
     }
 
     try:
-        model_name = get_single_available_model()
+        r = requests.post(url, json=payload, timeout=18)
+        res_data = r.json()
 
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            system_instruction=SYSTEM_PROMPT,
-            generation_config=generation_config,
-            safety_settings=SAFE_SETTINGS
-        )
+        if "candidates" in res_data and len(res_data["candidates"]) > 0:
+            raw_text = res_data["candidates"][0]["content"]["parts"][0]["text"]
+            cleaned = clean_math_syntax(raw_text)
+            return jsonify({"reply": cleaned, "model_used": selected_model}), 200
+        elif "error" in res_data:
+            CACHED_AVAILABLE_MODEL = None  # Error par cache reset
+            err_msg = res_data['error'].get('message', 'Unknown Error')
+            return jsonify({"reply": f"API Error: {err_msg}"}), 200
+        else:
+            return jsonify({"reply": "Jawab prapt nahi hua, kripya dobara sawal bhejein."}), 200
 
-        chat_session = model.start_chat(history=history)
-        response = chat_session.send_message(user_query, request_options={"timeout": 25})
-
-        cleaned_reply = clean_math_syntax(response.text)
-        return jsonify({"reply": cleaned_reply, "model_used": model_name}), 200
-
+    except requests.exceptions.Timeout:
+        return jsonify({"reply": "Server response me thoda time lag gaya. Kripya chhota sawal likh kar bhejein."}), 200
     except Exception as e:
-        global CACHED_AVAILABLE_MODEL
         CACHED_AVAILABLE_MODEL = None
-        err_msg = str(e)
-        if "429" in err_msg.lower() or "quota" in err_msg.lower():
-            return jsonify({"reply": f"Google Quota Alert: Kripya 1 minute baad prayas karein ({err_msg})"}), 429
-        return jsonify({"reply": f"AI Error: {err_msg}"}), 500
+        return jsonify({"reply": f"Error: {str(e)}"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
     
-        
