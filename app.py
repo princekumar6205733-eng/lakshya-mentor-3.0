@@ -69,7 +69,7 @@ def clean_math_syntax(text):
     text = text.replace('```', '')
     text = re.sub(r'\\\[(.*?)\\\]', r'\1', text)
 
-    # Convert \text{...} to plain text (Fixes the \text{} issue completely)
+    # Convert \text{...} to plain text
     text = re.sub(r'\\text\{([^}]*)\}', r'\1', text)
     text = re.sub(r'\\mathbf\{([^}]*)\}', r'\1', text)
     text = re.sub(r'\\mathit\{([^}]*)\}', r'\1', text)
@@ -107,7 +107,7 @@ def clean_math_syntax(text):
 
     return text.strip()
 
-# High-Speed Static Flash Models (Eliminates slow dynamic listing delay)
+# Fast Static Models
 FAST_MODELS = [
     "models/gemini-1.5-flash",
     "models/gemini-1.5-flash-8b"
@@ -187,7 +187,15 @@ CHAT_HTML = """
             div.className = `message ${sender}`;
 
             if (sender === "bot") {
-                div.innerHTML = marked.parse(text);
+                try {
+                    if (typeof marked !== 'undefined' && marked.parse) {
+                        div.innerHTML = marked.parse(text);
+                    } else {
+                        div.innerText = text;
+                    }
+                } catch(e) {
+                    div.innerText = text;
+                }
             } else {
                 div.innerText = text;
             }
@@ -309,7 +317,7 @@ def chat():
 
                     chat_session = model.start_chat(history=history)
                     
-                    # 10s timeout protection to avoid 200s hang
+                    # 10s strict timeout
                     response = chat_session.send_message(
                         user_query,
                         request_options={"timeout": 10}
