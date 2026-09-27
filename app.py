@@ -91,13 +91,12 @@ def get_flash_model():
     return CACHED_MODEL
 
 def predict(message, history):
-   # --- LIVE USER & QUERY TRACKER ---
+    # --- ONLY STUDENT DETAIL TRACKER ---
     turn_count = len(history) if history else 0
     clean_msg = message.strip() if message else ""
-    if turn_count == 1:
-        print(f"\n[NEW STUDENT INFO] Name/Intro: {clean_msg}")
-    else:
-        print(f"\n[LIVE QUERY | Turn {turn_count}] Message: {clean_msg}")
+    # Sirf Turn 2 (jab student naam aur class batata hai) tabhi log karega
+    if turn_count == 2:
+        print(f"\n[NEW STUDENT REGISTERED] Detail: {clean_msg}")
     # --------------------------------- 
     if not API_KEY:
         yield "Render Environment Variable me API Key set nahi hai."
